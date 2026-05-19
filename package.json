@@ -1,0 +1,9 @@
+{
+  "name": "emberfall-depths",
+  "version": "1.0.0",
+  "description": "Descend the Emberfall - Dark Fantasy Action RPG",
+  "scripts": {
+    "dev": "npx --yes serve . --listen 3000"
+  },
+  "private": true
+}

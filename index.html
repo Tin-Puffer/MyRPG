@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Emberfall Depths</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <section class="game-panel">
+        <canvas id="game" width="1280" height="720" aria-label="Emberfall Depths game canvas"></canvas>
+
+        <div class="hud-overlay">
+          <div class="hud-top">
+            <section class="overlay-card vitals-card">
+              <div class="section-title compact">
+                <span>Adventurer</span>
+                <span id="levelBadge" class="hint">Level 1</span>
+              </div>
+              <div class="meta-row">
+                <span id="areaBadge" class="area-badge">Sanctum Crossing</span>
+                <span id="goldText" class="gold-badge">120g</span>
+              </div>
+              <div class="bar-group compact">
+                <div class="bar-label">
+                  <span>Vitality</span>
+                  <span id="hpText">120 / 120</span>
+                </div>
+                <div class="bar-track hp"><div id="hpFill" class="bar-fill"></div></div>
+              </div>
+              <div class="bar-group compact">
+                <div class="bar-label">
+                  <span>Stamina</span>
+                  <span id="staminaText">100 / 100</span>
+                </div>
+                <div class="bar-track stamina"><div id="staminaFill" class="bar-fill"></div></div>
+              </div>
+              <div class="bar-group compact">
+                <div class="bar-label">
+                  <span>Mana</span>
+                  <span id="manaText">80 / 80</span>
+                </div>
+                <div class="bar-track mana"><div id="manaFill" class="bar-fill"></div></div>
+              </div>
+              <div class="bar-group compact">
+                <div class="bar-label">
+                  <span>Experience</span>
+                  <span id="xpText">0 / 60</span>
+                </div>
+                <div class="bar-track xp"><div id="xpFill" class="bar-fill"></div></div>
+              </div>
+            </section>
+
+            <section class="overlay-card control-dock">
+              <div class="section-title compact">
+                <span>Menu</span>
+                <span class="hint">In-game</span>
+              </div>
+              <div class="dock-buttons">
+                <button id="toggleCharacterButton" class="dock-button" type="button">Character `C`</button>
+                <button id="toggleInventoryButton" class="dock-button" type="button">Inventory `B`</button>
+                <button id="toggleWorldButton" class="dock-button" type="button">World `Tab`</button>
+              </div>
+            </section>
+          </div>
+
+          <div class="hud-bottom-left">
+            <section class="overlay-card combat-card">
+              <div class="section-title compact">
+                <span>Combat Log</span>
+                <span class="hint">Live</span>
+              </div>
+              <div id="combatLog" class="combat-log"></div>
+            </section>
+          </div>
+
+          <div class="hud-bottom-center">
+            <section class="overlay-card hotbar-card">
+              <div class="section-title compact">
+                <span>Quick Items</span>
+                <span id="quickAssignText" class="hint">Click consumable to assign</span>
+              </div>
+              <div id="quickbarPanel" class="quickbar-grid"></div>
+            </section>
+          </div>
+
+          <div class="hud-bottom-right">
+            <section class="overlay-card skillbar-card">
+              <div class="section-title compact">
+                <span>Skills</span>
+                <span class="hint">U / I / O</span>
+              </div>
+              <div id="skillbarPanel" class="skillbar-grid"></div>
+            </section>
+          </div>
+
+          <section id="characterWindow" class="overlay-window hidden">
+            <div class="window-head">
+              <div>
+                <p class="eyebrow">Build</p>
+                <h2>Character</h2>
+              </div>
+              <button id="closeCharacterButton" class="window-close" type="button">Close</button>
+            </div>
+            <div class="window-body">
+              <div class="window-section">
+                <div class="section-title">
+                  <span>Attributes</span>
+                  <span id="skillPointBadge" class="hint">0 SP</span>
+                </div>
+                <div id="statsPanel" class="stats-panel"></div>
+              </div>
+              <div class="window-section">
+                <div class="section-title">
+                  <span>Equipment</span>
+                  <span class="hint">Click equipped gear to remove</span>
+                </div>
+                <div id="equipmentPanel" class="equipment-grid"></div>
+              </div>
+            </div>
+          </section>
+
+          <section id="inventoryWindow" class="overlay-window hidden">
+            <div class="window-head">
+              <div>
+                <p class="eyebrow">Spoils</p>
+                <h2>Inventory</h2>
+              </div>
+              <button id="closeInventoryButton" class="window-close" type="button">Close</button>
+            </div>
+            <div class="window-body">
+              <div class="window-section">
+                <div class="section-title">
+                  <span>Pack</span>
+                  <span class="hint">Click to equip or use</span>
+                </div>
+                <div id="inventoryPanel" class="inventory-grid"></div>
+              </div>
+              <div id="itemActionCard" class="window-section hidden">
+                <div class="section-title">
+                  <span id="itemActionTitle">Selected Item</span>
+                  <span class="hint">Inventory Actions</span>
+                </div>
+                <div id="itemActionText" class="world-entry"></div>
+                <div class="interaction-actions">
+                  <button id="itemPrimaryActionButton" class="interaction-button" type="button">Use</button>
+                  <button id="itemDropActionButton" class="interaction-button danger" type="button">Drop</button>
+                </div>
+              </div>
+              <div id="tooltip" class="tooltip hidden"></div>
+            </div>
+          </section>
+
+          <section id="worldWindow" class="overlay-window hidden">
+            <div class="window-head">
+              <div>
+                <p class="eyebrow">Expedition</p>
+                <h2>World</h2>
+              </div>
+              <button id="closeWorldButton" class="window-close" type="button">Close</button>
+            </div>
+            <div class="window-body two-column">
+              <div class="window-section">
+                <div class="section-title">
+                  <span>Area Status</span>
+                  <span class="hint">Runtime</span>
+                </div>
+                <div id="worldPanel" class="world-panel"></div>
+              </div>
+              <div class="window-section">
+                <div class="section-title">
+                  <span>Interaction</span>
+                  <span class="hint">Press `E`</span>
+                </div>
+                <div id="interactionPanel" class="interaction-panel"></div>
+              </div>
+            </div>
+          </section>
+
+          <section id="stashCard" class="overlay-window hidden">
+            <div class="window-head">
+              <div>
+                <p class="eyebrow">Storage</p>
+                <h2>Stash Chest</h2>
+              </div>
+              <button id="closeStashButton" class="window-close" type="button">Close</button>
+            </div>
+            <div class="window-body">
+              <div class="window-section">
+                <div class="section-title">
+                  <span>Stored Gear</span>
+                  <span class="hint">Click to transfer back</span>
+                </div>
+                <div id="stashPanel" class="inventory-grid"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div id="screenOverlay" class="screen-overlay hidden"></div>
+        <div id="menuOverlay" class="menu-overlay">
+          <div class="menu-card">
+            <p class="eyebrow">Dark Fantasy Action RPG</p>
+            <h2 id="menuTitle">Descend the Emberfall</h2>
+            <p id="menuCopy" class="menu-copy">
+              Explore shifting chambers, cut down dungeon fiends, gather relics,
+              and survive long enough to find the next descent.
+            </p>
+            <button id="startButton" class="primary-button" type="button">Start Game</button>
+            <button id="restartButton" class="secondary-button hidden" type="button">Restart Run</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
