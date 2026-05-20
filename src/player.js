@@ -55,6 +55,7 @@ export class Player {
     this.hurtTimer = 0;
     this.invulnTimer = 0;
     this.walkCycle = 0;
+    this.idleCycle = 0;
     this.facingAngle = Math.PI / 2;
     this.direction = DIRECTIONS.DOWN;
     this.isMoving = false;
@@ -74,6 +75,21 @@ export class Player {
     this.buffs = {
       fury: 0,
       ward: 0,
+    };
+    this.debuffs = {
+      poison: 0,
+      burn: 0,
+      slow: 0,
+      stun: 0,
+    };
+    this.debuffPower = {
+      poison: 0,
+      burn: 0,
+      slow: 0,
+    };
+    this.debuffTicks = {
+      poison: 0.6,
+      burn: 0.45,
     };
     this.skills = {
       arcaneBurst: { key: "KeyU", name: "Arcane Burst", manaCost: 26, cooldown: 4.5, current: 0 },
@@ -267,11 +283,16 @@ export class Player {
     Object.keys(this.buffs).forEach((buff) => {
       this.buffs[buff] = Math.max(0, this.buffs[buff] - dt);
     });
+    Object.keys(this.debuffs).forEach((debuff) => {
+      this.debuffs[debuff] = Math.max(0, this.debuffs[debuff] - dt);
+    });
+    this.updateDebuffs(dt, game);
 
     const moveX = (game.input.isDown("KeyD") ? 1 : 0) - (game.input.isDown("KeyA") ? 1 : 0);
     const moveY = (game.input.isDown("KeyS") ? 1 : 0) - (game.input.isDown("KeyW") ? 1 : 0);
     const move = normalize(moveX, moveY);
-    this.isMoving = move.x !== 0 || move.y !== 0;
+    const stunned = this.debuffs.stun > 0;
+    this.isMoving = !stunned && (move.x !== 0 || move.y !== 0);
 
     if (this.isMoving) {
       this.lastMove = move;
@@ -302,17 +323,76 @@ export class Player {
     }
 
     if (this.isMoving) {
-      const velocity = this.attackPhase === "idle" ? this.speed : this.speed * 0.45;
+      const slowScale = this.debuffs.slow > 0 ? Math.max(0.45, 1 - this.debuffPower.slow) : 1;
+      const velocity = (this.attackPhase === "idle" ? this.speed : this.speed * 0.45) * slowScale;
       this.move(move.x * velocity * dt, move.y * velocity * dt, game.dungeon);
       this.walkCycle += dt * 10;
+    } else {
+      this.idleCycle += dt * 3.2;
     }
 
-    if (game.input.consumeAttack()) {
+    if (!stunned && game.input.consumeAttack()) {
       if (this.attackPhase === "idle") {
         this.beginAttack(game);
       } else if (this.canQueueNextAttack()) {
         this.queuedAttack = true;
       }
+    }
+  }
+
+  updateDebuffs(dt, game) {
+    if (this.debuffs.poison > 0) {
+      this.debuffTicks.poison -= dt;
+      if (this.debuffTicks.poison <= 0) {
+        this.debuffTicks.poison = 0.6;
+        this.applyDamageOverTime(Math.max(1, Math.round(this.debuffPower.poison)), "#8ee182", game, "poison");
+      }
+    }
+
+    if (this.debuffs.burn > 0) {
+      this.debuffTicks.burn -= dt;
+      if (this.debuffTicks.burn <= 0) {
+        this.debuffTicks.burn = 0.45;
+        this.applyDamageOverTime(Math.max(1, Math.round(this.debuffPower.burn)), "#ffb06d", game, "burn");
+      }
+    }
+  }
+
+  applyDamageOverTime(amount, color, game, type) {
+    if (this.isDead) return;
+    this.hp = Math.max(0, this.hp - amount);
+    game.addPopup(this.x, this.y - 24, `-${amount}`, color);
+    game.addParticles(this.x, this.y - 4, color, 6, 45);
+    if (this.hp <= 0) this.isDead = true;
+  }
+
+  applyDebuff(effect, game) {
+    if (!effect?.type || this.isDead) return;
+    const duration = effect.duration ?? 0;
+
+    if (effect.type === "poison") {
+      this.debuffs.poison = Math.max(this.debuffs.poison, duration);
+      this.debuffPower.poison = Math.max(this.debuffPower.poison, effect.power ?? 4);
+      this.debuffTicks.poison = Math.min(this.debuffTicks.poison, effect.tick ?? 0.6);
+      game.addPopup(this.x, this.y - 40, "POISON", "#8ee182");
+    } else if (effect.type === "burn") {
+      this.debuffs.burn = Math.max(this.debuffs.burn, duration);
+      this.debuffPower.burn = Math.max(this.debuffPower.burn, effect.power ?? 4);
+      this.debuffTicks.burn = Math.min(this.debuffTicks.burn, effect.tick ?? 0.45);
+      game.addPopup(this.x, this.y - 40, "BURN", "#ffb06d");
+    } else if (effect.type === "slow") {
+      this.debuffs.slow = Math.max(this.debuffs.slow, duration);
+      this.debuffPower.slow = Math.max(this.debuffPower.slow, effect.power ?? 0.35);
+      game.addPopup(this.x, this.y - 40, "SLOW", "#98d4ff");
+    } else if (effect.type === "stun") {
+      this.debuffs.stun = Math.max(this.debuffs.stun, duration);
+      this.attackPhase = "idle";
+      this.attackElapsed = 0;
+      this.attackProfile = null;
+      this.attackResolved = false;
+      this.queuedAttack = false;
+      this.attackFacingLocked = null;
+      game.addPopup(this.x, this.y - 40, "STUN", "#ffe08a");
     }
   }
 
@@ -406,7 +486,7 @@ export class Player {
     }
   }
 
-  takeDamage(amount, game, angle = 0) {
+  takeDamage(amount, game, angle = 0, effect = null) {
     if (this.invulnTimer > 0 || this.isDead) return false;
 
     const wardReduction = this.buffs.ward > 0 ? 0.78 : 1;
@@ -421,6 +501,7 @@ export class Player {
     game.addScreenShake(7, 0.2);
     game.audio.playPlayerHurt();
     game.addLog(`The dungeon bites back for ${mitigated} damage.`);
+    if (effect) this.applyDebuff(effect, game);
 
     if (this.hp <= 0) {
       this.isDead = true;
@@ -463,7 +544,12 @@ export class Player {
       ? this.attackProfile.windup + this.attackProfile.active + this.attackProfile.recovery
       : 1;
     const attackFrame = Math.min(3, Math.floor((this.attackElapsed / total) * 4));
-    const frame = state === "attack" ? attackFrame : Math.floor(this.walkCycle) % 4;
+    const frame =
+      state === "attack"
+        ? attackFrame
+        : state === "walk"
+          ? Math.floor(this.walkCycle) % 4
+          : Math.floor(this.idleCycle) % 4;
     const sprite = assets.getCharacterSprite(
       "player",
       this.direction,
@@ -473,13 +559,21 @@ export class Player {
       0,
       this.attackStep
     );
+    const outline = assets.getCharacterOutlineSprite
+      ? assets.getCharacterOutlineSprite("player", this.direction, state, frame, this.hurtTimer > 0, 0, this.attackStep)
+      : null;
+    const spriteSize = assets.characterSpriteSize ?? 48;
+    const spriteHalf = spriteSize / 2;
 
-    // Draw shadow (4px-aligned)
-    ctx.drawImage(assets.props.shadow, screenX - 16, screenY + 8, 32, 12);
+    if (assets.props.shadowSoft) {
+      ctx.drawImage(assets.props.shadowSoft, screenX - 22, screenY + 9, 44, 16);
+    } else {
+      ctx.drawImage(assets.props.shadow, screenX - 20, screenY + 9, 40, 14);
+    }
 
     // Attack glow
     if (this.attackPhase === "active") {
-      ctx.fillStyle = "rgba(255, 181, 95, 0.14)";
+      ctx.fillStyle = "rgba(255, 181, 95, 0.16)";
       ctx.beginPath();
       ctx.arc(screenX, screenY - 2, 16 + this.attackStep * 4, 0, Math.PI * 2);
       ctx.fill();
@@ -495,7 +589,30 @@ export class Player {
       ctx.globalAlpha = 1;
     }
 
-    // Draw sprite at native 32x32 (will be pixel-doubled by game.js)
-    ctx.drawImage(sprite, screenX - 16, screenY - 20, 32, 32);
+    if (this.debuffs.poison > 0 || this.debuffs.burn > 0 || this.debuffs.slow > 0) {
+      ctx.globalAlpha = 0.14;
+      ctx.fillStyle =
+        this.debuffs.poison > 0
+          ? "#8ee182"
+          : this.debuffs.burn > 0
+            ? "#ffb06d"
+            : "#98d4ff";
+      ctx.beginPath();
+      ctx.arc(screenX, screenY - 6, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    if (this.debuffs.stun > 0) {
+      ctx.fillStyle = "#ffe08a";
+      ctx.fillRect(screenX - 6, screenY - 34, 4, 4);
+      ctx.fillRect(screenX + 2, screenY - 37, 4, 4);
+      ctx.fillRect(screenX + 9, screenY - 33, 4, 4);
+    }
+
+    if (outline) {
+      ctx.drawImage(outline, screenX - spriteHalf, screenY - 31, spriteSize, spriteSize);
+    }
+    ctx.drawImage(sprite, screenX - spriteHalf, screenY - 31, spriteSize, spriteSize);
   }
 }

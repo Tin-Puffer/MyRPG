@@ -501,7 +501,7 @@ export class Game {
         projectile.owner !== "player" &&
         distance(projectile.x, projectile.y, this.player.x, this.player.y) < this.player.radius + projectile.size
       ) {
-        this.player.takeDamage(projectile.damage, this, projectile.angle);
+        this.player.takeDamage(projectile.damage, this, projectile.angle, projectile.effect ?? null);
         this.addParticles(projectile.x, projectile.y, projectile.color, 10, 70);
         projectile.life = 0;
       } else if (projectile.owner === "player") {
@@ -592,8 +592,61 @@ export class Game {
     ctx.fillRect(120, 60, 400, 240);
   }
 
+  renderAmbientAtmosphere(ctx, camera) {
+    const wrap = (value, size) => ((value % size) + size) % size;
+    const dustColor =
+      this.currentThemeId === "forge"
+        ? "#d19165"
+        : this.currentThemeId === "grotto"
+          ? "#9db08f"
+          : this.currentThemeId === "hub"
+            ? "#d8b899"
+            : "#b8a7a7";
+    const emberColor = this.currentThemeId === "forge" ? "#ff9f62" : "#f2c585";
+    const fogColor = this.currentThemeId === "grotto" ? "#4c6452" : "#4a4652";
+
+    const dustCount = this.currentThemeId === "hub" ? 14 : 22;
+    for (let index = 0; index < dustCount; index += 1) {
+      const sx = wrap(index * 63 + camera.x * 0.08 + this.ambientTime * (8 + (index % 4)), RENDER_W + 48) - 24;
+      const sy = wrap(index * 41 + camera.y * 0.04 - this.ambientTime * (5 + (index % 3)), RENDER_H + 48) - 24;
+      const size = index % 5 === 0 ? 2 : 1;
+      ctx.globalAlpha = 0.06 + (index % 4) * 0.02;
+      ctx.fillStyle = dustColor;
+      ctx.fillRect(Math.round(sx), Math.round(sy), size, size);
+      if (size === 2) ctx.fillRect(Math.round(sx) + 1, Math.round(sy) - 1, 1, 1);
+    }
+
+    const emberCount = this.currentThemeId === "forge" ? 18 : this.currentThemeId === "hub" ? 10 : 6;
+    for (let index = 0; index < emberCount; index += 1) {
+      const sx = wrap(index * 89 - camera.x * 0.05 + this.ambientTime * (12 + (index % 3) * 4), RENDER_W + 60) - 30;
+      const sy = wrap(index * 57 + camera.y * 0.03 - this.ambientTime * (20 + (index % 4) * 3), RENDER_H + 70) - 35;
+      ctx.globalAlpha = this.currentThemeId === "forge" ? 0.12 : 0.05;
+      ctx.fillStyle = emberColor;
+      ctx.fillRect(Math.round(sx), Math.round(sy), 1, 1);
+      if (index % 3 === 0) ctx.fillRect(Math.round(sx), Math.round(sy) + 1, 1, 1);
+    }
+
+    if (this.currentThemeId !== "hub") {
+      ctx.fillStyle = fogColor;
+      for (let band = 0; band < 3; band += 1) {
+        const bandY = 112 + band * 146 + Math.sin(this.ambientTime * 0.22 + band + camera.x * 0.001) * 16;
+        ctx.globalAlpha = 0.045 - band * 0.008;
+        for (let x = -8; x < RENDER_W + 8; x += 10) {
+          if (((x / 10 + band + Math.floor(this.ambientTime * 1.8)) & 1) === 0) {
+            ctx.fillRect(x, Math.round(bandY + ((x / 10) % 3)), 6, 2);
+          }
+        }
+      }
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
   renderWorld(ctx, camera) {
     const drawables = [];
+    const pickVariant = (asset, variant = 0) => (Array.isArray(asset) ? asset[Math.abs(variant) % asset.length] : asset);
+    const pickAnimated = (asset, phase = 0, speed = 7) =>
+      Array.isArray(asset) ? asset[Math.abs(Math.floor(this.ambientTime * speed + phase * 3)) % asset.length] : asset;
 
     this.dungeon.props.forEach((prop) => {
       drawables.push({
@@ -608,16 +661,39 @@ export class Game {
             ctx.globalAlpha = 1;
           }
           if (prop.type === "brazier") {
+            ctx.drawImage(this.assets.props.shadowPool, sx - 28, sy + 4, 56, 18);
             ctx.drawImage(this.assets.props.shadow, sx - 14, sy + 6, 28, 12);
-            ctx.drawImage(this.assets.props.brazier, sx - 16, sy - 20, 32, 40);
+            ctx.drawImage(pickAnimated(this.assets.props.brazier, prop.phase, 8), sx - 16, sy - 20, 32, 40);
+          }
+          if (prop.type === "lantern") {
+            ctx.drawImage(this.assets.props.shadowSoft, sx - 18, sy + 8, 36, 14);
+            ctx.drawImage(pickAnimated(this.assets.props.lantern, prop.phase, 10), sx - 16, sy - 14, 32, 32);
           }
           if (prop.type === "column") {
+            ctx.drawImage(this.assets.props.shadowPool, sx - 26, sy + 8, 52, 16);
             ctx.drawImage(this.assets.props.shadow, sx - 16, sy + 8, 32, 12);
             ctx.drawImage(this.assets.props.column, sx - 16, sy - 22, 32, 44);
           }
           if (prop.type === "tomb") {
             ctx.drawImage(this.assets.props.shadow, sx - 14, sy + 8, 28, 10);
             ctx.drawImage(this.assets.props.tomb, sx - 16, sy - 20, 32, 40);
+          }
+          if (prop.type === "barrel") {
+            ctx.drawImage(this.assets.props.shadowSoft, sx - 15, sy + 10, 30, 12);
+            ctx.drawImage(pickVariant(this.assets.props.barrel, prop.variant), sx - 16, sy - 16, 32, 32);
+          }
+          if (prop.type === "crate") {
+            ctx.drawImage(this.assets.props.shadowSoft, sx - 15, sy + 10, 30, 12);
+            ctx.drawImage(pickVariant(this.assets.props.crate, prop.variant), sx - 16, sy - 16, 32, 32);
+          }
+          if (prop.type === "brokenStones") {
+            ctx.drawImage(pickVariant(this.assets.props.brokenStones, prop.variant), sx - 16, sy - 16, 32, 32);
+          }
+          if (prop.type === "weeds") {
+            ctx.drawImage(pickVariant(this.assets.props.weeds, prop.variant), sx - 16, sy - 16, 32, 32);
+          }
+          if (prop.type === "debris") {
+            ctx.drawImage(this.assets.props.debris, sx - 16, sy - 16, 32, 32);
           }
           if (prop.type === "lavaVent") {
             ctx.globalAlpha = 0.25 + Math.sin(this.ambientTime * 7 + sx * 0.01) * 0.08;
@@ -730,6 +806,7 @@ export class Game {
 
     drawables.sort((a, b) => a.y - b.y).forEach((entry) => entry.render());
 
+    this.renderAmbientAtmosphere(ctx, camera);
     this.renderAttackTelegraph(ctx, camera);
     this.renderProjectiles(ctx, camera);
     this.renderSlashes(ctx, camera);
@@ -857,9 +934,9 @@ export class Game {
   renderLighting(ctx, camera) {
     if (this.currentThemeId === "hub") {
       const ambient = ctx.createLinearGradient(0, 0, 0, RENDER_H);
-      ambient.addColorStop(0, "rgba(255, 220, 170, 0.18)");
-      ambient.addColorStop(0.55, "rgba(245, 206, 150, 0.08)");
-      ambient.addColorStop(1, "rgba(18, 18, 22, 0.18)");
+      ambient.addColorStop(0, "rgba(255, 220, 170, 0.2)");
+      ambient.addColorStop(0.55, "rgba(245, 206, 150, 0.09)");
+      ambient.addColorStop(1, "rgba(18, 18, 22, 0.22)");
       ctx.fillStyle = ambient;
       ctx.fillRect(0, 0, RENDER_W, RENDER_H);
     }
@@ -868,21 +945,58 @@ export class Game {
     const py = this.player.y - camera.y + RENDER_H / 2;
 
     this.dungeon.props.forEach((prop) => {
-      if (prop.type !== "brazier" && prop.type !== "rune") return;
+      const lightProfile =
+        prop.type === "brazier"
+          ? {
+              color: `rgba(255, 150, 86, ${0.2 + Math.sin(this.ambientTime * 8 + prop.phase) * 0.04})`,
+              inner: "rgba(255, 214, 148, 0.18)",
+              radius: 92,
+              yOffset: -10,
+            }
+          : prop.type === "lantern"
+            ? {
+                color: `rgba(255, 188, 108, ${0.16 + Math.sin(this.ambientTime * 9 + prop.phase) * 0.03})`,
+                inner: "rgba(255, 222, 164, 0.14)",
+                radius: 68,
+                yOffset: -8,
+              }
+            : prop.type === "lavaVent"
+              ? {
+                  color: "rgba(255, 120, 62, 0.14)",
+                  inner: "rgba(255, 196, 124, 0.1)",
+                  radius: 62,
+                  yOffset: 0,
+                }
+              : prop.type === "shrine"
+                ? {
+                    color: "rgba(255, 214, 148, 0.12)",
+                    inner: "rgba(255, 238, 184, 0.08)",
+                    radius: 70,
+                    yOffset: -12,
+                  }
+                : prop.type === "rune"
+                  ? {
+                      color: this.dungeon.theme?.glow ?? "rgba(102, 220, 226, 0.12)",
+                      inner: "rgba(170, 238, 240, 0.08)",
+                      radius: 60,
+                      yOffset: -10,
+                    }
+                  : null;
+      if (!lightProfile) return;
+
       const sx = prop.x - camera.x + RENDER_W / 2;
       const sy = prop.y - camera.y + RENDER_H / 2;
-      const color =
-        prop.type === "brazier"
-          ? `rgba(255, 140, 78, ${0.16 + Math.sin(this.ambientTime * 8 + prop.phase) * 0.03})`
-          : prop.type === "shrine"
-            ? "rgba(255, 236, 170, 0.1)"
-            : this.dungeon.theme?.glow ?? "rgba(102, 220, 226, 0.12)";
-      const radius = prop.type === "brazier" ? 80 : prop.type === "shrine" ? 70 : 60;
-      const glow = ctx.createRadialGradient(sx, sy - 10, 6, sx, sy - 10, radius);
-      glow.addColorStop(0, color);
+      const glow = ctx.createRadialGradient(sx, sy + lightProfile.yOffset, 6, sx, sy + lightProfile.yOffset, lightProfile.radius);
+      glow.addColorStop(0, lightProfile.color);
+      glow.addColorStop(0.4, lightProfile.inner);
       glow.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = glow;
-      ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
+      ctx.fillRect(
+        sx - lightProfile.radius,
+        sy - lightProfile.radius,
+        lightProfile.radius * 2,
+        lightProfile.radius * 2
+      );
     });
 
     this.interactables.forEach((entry) => {
@@ -920,12 +1034,13 @@ export class Game {
     if (this.currentThemeId !== "hub") {
       const light = ctx.createRadialGradient(px, py, 40, px, py, 260);
       light.addColorStop(0, "rgba(255, 210, 145, 0)");
-      light.addColorStop(0.55, "rgba(12, 10, 16, 0.35)");
-      light.addColorStop(1, "rgba(2, 2, 4, 0.88)");
+      light.addColorStop(0.48, "rgba(22, 18, 24, 0.2)");
+      light.addColorStop(0.72, "rgba(8, 7, 12, 0.56)");
+      light.addColorStop(1, "rgba(2, 2, 4, 0.9)");
       ctx.fillStyle = light;
       ctx.fillRect(0, 0, RENDER_W, RENDER_H);
     } else {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
+      ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
       ctx.fillRect(0, 0, RENDER_W, RENDER_H);
     }
 
@@ -1043,7 +1158,7 @@ export class Game {
     });
   }
 
-  spawnEnemyProjectile({ x, y, angle, speed, damage, color, size, owner }) {
+  spawnEnemyProjectile({ x, y, angle, speed, damage, color, size, owner, effect = null, life = 2.4 }) {
     this.projectiles.push({
       x,
       y,
@@ -1053,9 +1168,16 @@ export class Game {
       color,
       size,
       owner,
-      life: 2.4,
-      maxLife: 2.4,
+      effect,
+      life,
+      maxLife: life,
     });
+  }
+
+  spawnEnemyUnit(typeId, x, y, scale = 1) {
+    const enemy = new Enemy(x, y, typeId, scale);
+    this.enemies.push(enemy);
+    return enemy;
   }
 
   collectLoot(drop) {

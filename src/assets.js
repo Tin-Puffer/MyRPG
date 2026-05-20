@@ -1,7 +1,50 @@
 import { DIRECTIONS } from "./constants.js";
 
 const BASE_SIZE = 32;
-const P = 4;
+const CHARACTER_SIZE = 48;
+const PALETTE = {
+  outline: "#110d14",
+  deepShadow: "#070609",
+  floorBase: "#221f28",
+  floorMortar: "#17141c",
+  floorStoneA: "#38333e",
+  floorStoneB: "#312c38",
+  floorStoneC: "#443d47",
+  floorHighlight: "#5a525b",
+  floorWear: "#6b615c",
+  dirtDark: "#382e2a",
+  dirtMid: "#54453d",
+  mossDark: "#304033",
+  mossMid: "#49604a",
+  mossLight: "#728866",
+  woodDark: "#4b3326",
+  woodMid: "#694733",
+  woodLight: "#977056",
+  woodGlow: "#d2ac73",
+  metalDark: "#332f38",
+  metalMid: "#5a525b",
+  metalLight: "#8d868f",
+  stoneDark: "#2a2530",
+  stoneMid: "#47414b",
+  stoneLight: "#6b6369",
+  clothDark: "#512435",
+  clothMid: "#6a3042",
+  clothTrim: "#b89b64",
+  skin: "#d5b483",
+  skinShadow: "#9d764d",
+  hair: "#4f392d",
+  leather: "#6a4a34",
+  leafDark: "#314232",
+  leafMid: "#50714a",
+  leafLight: "#80a06a",
+  steel: "#9daab5",
+  steelDark: "#5d6a76",
+  emberDark: "#b84b2e",
+  emberMid: "#ea8d4b",
+  emberLight: "#ffe8b2",
+  runeA: "#67b9bb",
+  runeB: "#a9e7df",
+};
 
 function makeCanvas(width, height) {
   const canvas = document.createElement("canvas");
@@ -17,14 +60,48 @@ function p(ctx, x, y, w, h, color) {
   ctx.fillRect(x, y, w, h);
 }
 
+function lineH(ctx, x, y, length, color, thickness = 1) {
+  p(ctx, x, y, length, thickness, color);
+}
+
+function lineV(ctx, x, y, length, color, thickness = 1) {
+  p(ctx, x, y, thickness, length, color);
+}
+
+function pixels(ctx, entries, color) {
+  entries.forEach(([x, y, w = 1, h = 1]) => p(ctx, x, y, w, h, color));
+}
+
+function framedRect(ctx, x, y, w, h, fill, outline = PALETTE.outline) {
+  p(ctx, x, y, w, h, outline);
+  p(ctx, x + 1, y + 1, w - 2, h - 2, fill);
+}
+
+function createOutlineCanvas(source, color = "#050409") {
+  const { canvas, ctx } = makeCanvas(source.width, source.height);
+  const offsets = [
+    [-2, 0], [2, 0], [0, -2], [0, 2],
+    [-1, -1], [1, -1], [-1, 1], [1, 1],
+    [-1, 0], [1, 0], [0, -1], [0, 1],
+  ];
+  offsets.forEach(([ox, oy]) => ctx.drawImage(source, ox, oy));
+  ctx.globalCompositeOperation = "source-in";
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.drawImage(source, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  return canvas;
+}
+
 function ellipseShadow(width = 28, height = 12, alpha = 0.38) {
   const { canvas, ctx } = makeCanvas(width, height);
-  const g = ctx.createRadialGradient(width/2, height/2, 1, width/2, height/2, width/2);
+  const g = ctx.createRadialGradient(width / 2, height / 2, 1, width / 2, height / 2, width / 2);
   g.addColorStop(0, `rgba(0,0,0,${alpha})`);
   g.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.ellipse(width/2, height/2, width/2, height/2, 0, 0, Math.PI*2);
+  ctx.ellipse(width / 2, height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
   ctx.fill();
   return canvas;
 }
@@ -32,189 +109,480 @@ function ellipseShadow(width = 28, height = 12, alpha = 0.38) {
 /* ── TILES (Map improvements) ───────────────── */
 function createFloorTile(variant = 0) {
   const { canvas, ctx } = makeCanvas(BASE_SIZE, BASE_SIZE);
-  // Base color
-  p(ctx, 0, 0, 32, 32, variant ? "#2a2530" : "#222028");
+  p(ctx, 0, 0, 32, 32, PALETTE.floorBase);
 
-  // Stone slabs (bigger blocks = 8x8)
-  const slabOffsets = variant
-    ? [[0,0],[16,0],[0,16],[16,16]]
-    : [[0,0],[14,0],[0,14],[16,14],[0,28],[16,28]];
+  const slabs = [
+    [1, 1, 14, 14, PALETTE.floorStoneA],
+    [17, 1, 14, 14, PALETTE.floorStoneB],
+    [1, 17, 14, 14, PALETTE.floorStoneB],
+    [17, 17, 14, 14, PALETTE.floorStoneC],
+  ];
 
-  const slabColors = ["#38333e", "#322d3a", "#3c3742"];
-  slabOffsets.forEach(([ox, oy], i) => {
-    const c = slabColors[i % slabColors.length];
-    p(ctx, ox, oy, 12, 11, c);
-    // Mortar line
-    p(ctx, ox + 12, oy, 2, 11, "#1a1820");
-    // Crack detail
-    p(ctx, ox + 4, oy + 3, 2, 2, "#4a3f47");
-    p(ctx, ox + 8, oy + 7, 3, 1, "#4a3f47");
+  slabs.forEach(([x, y, w, h, color], index) => {
+    p(ctx, x, y, w, h, color);
+    lineH(ctx, x + 1, y + 1, w - 2, PALETTE.floorHighlight);
+    if (index % 2 === 0) {
+      lineV(ctx, x + 1, y + 2, h - 4, PALETTE.floorHighlight);
+    }
   });
 
-  // Subtle grid highlight
-  p(ctx, 1, 1, 30, 1, "rgba(255, 214, 165, 0.04)");
+  p(ctx, 15, 0, 2, 32, PALETTE.floorMortar);
+  p(ctx, 0, 15, 32, 2, PALETTE.floorMortar);
+  lineH(ctx, 0, 0, 32, PALETTE.floorMortar);
+  lineH(ctx, 0, 31, 32, PALETTE.floorMortar);
+  lineV(ctx, 0, 0, 32, PALETTE.floorMortar);
+  lineV(ctx, 31, 0, 32, PALETTE.floorMortar);
+
+  pixels(ctx, [
+    [5, 5, 2, 1],
+    [10, 10, 1, 2],
+    [20, 8, 2, 1],
+    [24, 23, 1, 2],
+    [9, 24, 2, 1],
+  ], PALETTE.floorWear);
+  pixels(ctx, [
+    [3, 11],
+    [12, 21],
+    [20, 13],
+    [26, 6],
+    [28, 26],
+  ], PALETTE.deepShadow);
+
+  if (variant === 1) {
+    pixels(ctx, [
+      [4, 9, 4, 1],
+      [7, 10, 1, 2],
+      [8, 12, 3, 1],
+      [20, 20, 5, 1],
+      [23, 18, 1, 3],
+      [24, 17, 3, 1],
+    ], PALETTE.deepShadow);
+    pixels(ctx, [
+      [5, 8, 3, 1],
+      [21, 19, 3, 1],
+    ], PALETTE.floorHighlight);
+  } else if (variant === 2) {
+    pixels(ctx, [
+      [5, 21, 4, 3],
+      [8, 23, 2, 2],
+      [20, 5, 5, 3],
+      [22, 8, 2, 2],
+    ], PALETTE.dirtDark);
+    pixels(ctx, [
+      [6, 20, 2, 1],
+      [21, 4, 2, 1],
+    ], PALETTE.dirtMid);
+  } else if (variant === 3) {
+    pixels(ctx, [
+      [4, 18, 4, 2],
+      [6, 20, 3, 2],
+      [22, 10, 5, 2],
+      [24, 12, 2, 2],
+      [15, 23, 3, 2],
+    ], PALETTE.mossDark);
+    pixels(ctx, [
+      [5, 18, 2, 1],
+      [23, 10, 3, 1],
+      [15, 23, 2, 1],
+    ], PALETTE.mossLight);
+  } else if (variant === 4) {
+    pixels(ctx, [
+      [2, 2, 4, 1],
+      [2, 3, 1, 3],
+      [26, 26, 4, 1],
+      [29, 23, 1, 4],
+      [13, 15, 6, 2],
+      [15, 13, 2, 6],
+    ], PALETTE.floorWear);
+    pixels(ctx, [
+      [14, 14, 4, 4],
+    ], PALETTE.floorStoneA);
+  }
+
   return canvas;
 }
 
 function createFloorDetailTile() {
   const { canvas, ctx } = makeCanvas(BASE_SIZE, BASE_SIZE);
-  p(ctx, 0, 0, 32, 32, "#1e1c24");
-  // Decorative pattern - mosaic cross
-  p(ctx, 12, 2, 8, 8, "#4a4050");
-  p(ctx, 2, 12, 8, 8, "#4a4050");
-  p(ctx, 22, 12, 8, 8, "#4a4050");
-  p(ctx, 12, 22, 8, 8, "#4a4050");
-  // Center
-  p(ctx, 12, 12, 8, 8, "#6a5a6a");
-  p(ctx, 14, 14, 4, 4, "#8a7a8a");
+  p(ctx, 0, 0, 32, 32, PALETTE.floorBase);
+  p(ctx, 15, 0, 2, 32, PALETTE.floorMortar);
+  p(ctx, 0, 15, 32, 2, PALETTE.floorMortar);
+  p(ctx, 5, 5, 22, 22, PALETTE.floorStoneA);
+  p(ctx, 8, 8, 16, 16, PALETTE.floorStoneC);
+  pixels(ctx, [
+    [13, 4, 6, 4],
+    [13, 24, 6, 4],
+    [4, 13, 4, 6],
+    [24, 13, 4, 6],
+  ], PALETTE.floorStoneB);
+  pixels(ctx, [
+    [12, 12, 8, 8],
+    [14, 2, 4, 3],
+    [14, 27, 4, 3],
+    [2, 14, 3, 4],
+    [27, 14, 3, 4],
+  ], PALETTE.floorWear);
+  pixels(ctx, [
+    [14, 14, 4, 4],
+    [15, 10, 2, 2],
+    [15, 20, 2, 2],
+    [10, 15, 2, 2],
+    [20, 15, 2, 2],
+  ], PALETTE.floorHighlight);
   return canvas;
 }
 
 function createWallTile() {
   const { canvas, ctx } = makeCanvas(BASE_SIZE, BASE_SIZE);
-  p(ctx, 0, 0, 32, 32, "#0e0d12");
-  // Top cap
-  p(ctx, 0, 0, 32, 6, "#4a403a");
-  p(ctx, 0, 1, 32, 2, "#6a5a50");
-  p(ctx, 0, 4, 32, 1, "#8a7a6a");
-  // Stone wall body
-  p(ctx, 0, 6, 32, 26, "#2a242e");
-  // Brick pattern (8x6 blocks, staggered)
+  p(ctx, 0, 0, 32, 32, "#0d0b10");
+  p(ctx, 0, 0, 32, 6, "#4b413d");
+  lineH(ctx, 0, 1, 32, "#77695f", 2);
+  lineH(ctx, 0, 4, 32, PALETTE.floorWear);
+  p(ctx, 0, 6, 32, 26, PALETTE.stoneDark);
+
   for (let row = 0; row < 4; row++) {
     const y = 6 + row * 6;
     const ox = row % 2 === 0 ? 0 : 4;
     for (let col = 0; col < 4; col++) {
       const x = ox + col * 8;
-      const light = (row + col) % 2 === 0;
-      p(ctx, x, y, 7, 5, light ? "#3a3442" : "#322c38");
-      p(ctx, x + 3, y + 2, 2, 1, "#4a4450");
+      const fill = (row + col) % 2 === 0 ? PALETTE.stoneMid : "#3c3640";
+      p(ctx, x, y, 7, 5, fill);
+      lineH(ctx, x + 1, y + 1, 4, PALETTE.stoneLight);
     }
   }
-  // Moss
-  p(ctx, 2, 16, 4, 4, "#4a6a3a");
-  p(ctx, 24, 24, 4, 4, "#4a6a3a");
+  pixels(ctx, [
+    [4, 18, 3, 2],
+    [23, 23, 4, 2],
+  ], PALETTE.mossDark);
+  pixels(ctx, [
+    [5, 18, 2, 1],
+    [24, 23, 2, 1],
+    [12, 11, 3, 1],
+    [15, 12, 1, 3],
+  ], PALETTE.deepShadow);
   return canvas;
 }
 
 function createWallFaceTile() {
   const { canvas, ctx } = makeCanvas(BASE_SIZE, BASE_SIZE);
   p(ctx, 0, 0, 32, 32, "#16131a");
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 4; col++) {
+  for (let row = 0; row < 5; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
       const x = col * 8;
       const y = row * 6;
-      p(ctx, x, y, 7, 5, (row+col)%2===0 ? "#221e28" : "#1c1822");
-      p(ctx, x + 3, y + 2, 2, 1, "#0c0a10");
+      p(ctx, x, y, 7, 5, (row + col) % 2 === 0 ? "#231f29" : "#1c1821");
+      lineH(ctx, x + 1, y + 1, 4, "#322d38");
     }
   }
+  pixels(ctx, [
+    [3, 7, 3, 1],
+    [5, 8, 1, 3],
+    [18, 14, 4, 1],
+    [20, 15, 1, 3],
+    [25, 24, 3, 2],
+  ], "#0d0a10");
+  pixels(ctx, [
+    [24, 24, 3, 2],
+    [2, 26, 4, 2],
+  ], PALETTE.mossDark);
   return canvas;
 }
 
 function createDoorTile() {
   const { canvas, ctx } = makeCanvas(BASE_SIZE, BASE_SIZE);
-  p(ctx, 0, 0, 32, 32, "#1c1620");
-  // Door frame
-  p(ctx, 2, 2, 28, 28, "#4a3a2a");
-  // Vertical planks
+  p(ctx, 0, 0, 32, 32, "#1a141c");
+  framedRect(ctx, 2, 2, 28, 28, PALETTE.woodDark, PALETTE.outline);
+  p(ctx, 3, 3, 26, 2, PALETTE.woodLight);
   for (let x = 4; x < 28; x += 5) {
-    p(ctx, x, 3, 3, 26, "#6a5040");
+    p(ctx, x, 4, 3, 24, PALETTE.woodMid);
+    lineH(ctx, x, 4, 3, PALETTE.woodLight);
   }
-  // Top/bottom reinforcement
-  p(ctx, 2, 2, 28, 3, "#8a6a50");
-  p(ctx, 2, 27, 28, 3, "#2a1c14");
-  // Cross beam
-  p(ctx, 4, 11, 24, 2, "#2a1c14");
-  p(ctx, 4, 19, 24, 2, "#2a1c14");
-  // Cross decoration
-  p(ctx, 10, 14, 12, 2, "#c4a06a");
-  // Keyhole
-  p(ctx, 14, 13, 4, 4, "#8a7040");
-  p(ctx, 15, 15, 2, 3, "#1a1008");
+  p(ctx, 4, 10, 24, 2, PALETTE.metalDark);
+  p(ctx, 4, 20, 24, 2, PALETTE.metalDark);
+  p(ctx, 9, 14, 14, 3, PALETTE.metalMid);
+  p(ctx, 10, 14, 12, 1, PALETTE.metalLight);
+  p(ctx, 14, 13, 4, 5, PALETTE.woodGlow);
+  p(ctx, 15, 15, 2, 3, PALETTE.deepShadow);
+  pixels(ctx, [
+    [5, 7, 3, 1],
+    [23, 23, 3, 1],
+    [20, 6, 2, 2],
+    [8, 25, 2, 2],
+  ], PALETTE.deepShadow);
   return canvas;
 }
 
 /* ── Props ───────────────────────────────────── */
 function createChestSprite(open = false) {
   const { canvas, ctx } = makeCanvas(BASE_SIZE, BASE_SIZE);
-  p(ctx, 6, 22, 20, 6, "#1a1208"); // shadow
-  p(ctx, 6, 14, 20, 10, "#6a4528"); // body
-  p(ctx, 6, 13, 20, 2, "#c89850"); // lid edge
-  // Sides
-  p(ctx, 5, 14, 2, 10, "#1a1010");
-  p(ctx, 25, 14, 2, 10, "#1a1010");
-  // Lock
-  p(ctx, 14, 16, 4, 4, "#d0b868");
-  p(ctx, 15, 17, 2, 2, "#a08040");
-  // Inner shadow
-  p(ctx, 8, 16, 16, 6, "#3a2018");
+  p(ctx, 6, 22, 20, 6, PALETTE.deepShadow);
+  framedRect(ctx, 6, 14, 20, 10, PALETTE.woodMid, PALETTE.outline);
+  p(ctx, 7, 15, 18, 2, PALETTE.woodLight);
+  p(ctx, 7, 18, 18, 5, PALETTE.woodDark);
+  lineV(ctx, 10, 14, 10, PALETTE.metalDark);
+  lineV(ctx, 21, 14, 10, PALETTE.metalDark);
+  p(ctx, 14, 16, 4, 4, PALETTE.woodGlow);
+  p(ctx, 15, 17, 2, 2, "#8e6b30");
 
   if (open) {
-    p(ctx, 6, 6, 20, 8, "#6a4528"); // lid up
-    p(ctx, 8, 6, 16, 2, "#d0b868");
-    p(ctx, 8, 8, 16, 4, "#2a1810"); // dark inner
-    p(ctx, 12, 4, 8, 3, "#f0d060"); // treasure glow
-    // Glow lines
-    p(ctx, 14, 2, 4, 2, "#f8e890");
+    framedRect(ctx, 6, 6, 20, 8, PALETTE.woodMid, PALETTE.outline);
+    p(ctx, 8, 7, 16, 2, PALETTE.woodLight);
+    p(ctx, 8, 9, 16, 3, "#261811");
+    pixels(ctx, [
+      [12, 4, 8, 2],
+      [14, 2, 4, 2],
+    ], PALETTE.emberLight);
   } else {
-    p(ctx, 6, 8, 20, 7, "#7a4e28");
-    p(ctx, 8, 7, 16, 2, "#e0b868");
-    p(ctx, 12, 18, 2, 2, "#f0d060");
+    framedRect(ctx, 6, 8, 20, 7, PALETTE.woodMid, PALETTE.outline);
+    p(ctx, 8, 9, 16, 2, PALETTE.woodLight);
+    p(ctx, 12, 18, 2, 2, PALETTE.emberLight);
   }
   return canvas;
 }
 
 function createRuneDecal() {
   const { canvas, ctx } = makeCanvas(40, 40);
-  ctx.translate(20, 20);
-  ctx.strokeStyle = "rgba(80, 200, 220, 0.5)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(0, 0, 14, 0, Math.PI*2);
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(120, 220, 240, 0.3)";
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 8; i++) {
-    const a = (Math.PI*2*i)/8;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a)*10, Math.sin(a)*10);
-    ctx.lineTo(Math.cos(a)*16, Math.sin(a)*16);
-    ctx.stroke();
-  }
-  // Inner cross
-  ctx.strokeStyle = "rgba(160, 240, 255, 0.6)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(-8, 0); ctx.lineTo(8, 0);
-  ctx.moveTo(0, -8); ctx.lineTo(0, 8);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(160, 255, 255, 0.4)";
-  ctx.fillRect(-3, -3, 6, 6);
+  pixels(ctx, [
+    [14, 4, 12, 2],
+    [10, 6, 4, 2],
+    [26, 6, 4, 2],
+    [8, 8, 2, 4],
+    [30, 8, 2, 4],
+    [6, 12, 2, 16],
+    [32, 12, 2, 16],
+    [8, 28, 2, 4],
+    [30, 28, 2, 4],
+    [10, 32, 4, 2],
+    [26, 32, 4, 2],
+    [14, 34, 12, 2],
+    [14, 14, 12, 2],
+    [14, 24, 12, 2],
+    [14, 16, 2, 8],
+    [24, 16, 2, 8],
+    [18, 10, 4, 4],
+    [18, 26, 4, 4],
+  ], PALETTE.runeA);
+  pixels(ctx, [
+    [18, 18, 4, 4],
+    [12, 18, 4, 4],
+    [24, 18, 4, 4],
+    [18, 12, 4, 4],
+    [18, 24, 4, 4],
+  ], PALETTE.runeB);
   return canvas;
 }
 
-function createBrazierSprite() {
+function createBrazierSprite(frame = 0) {
   const { canvas, ctx } = makeCanvas(32, 40);
-  p(ctx, 10, 26, 12, 8, "#3a2a20"); // base
-  p(ctx, 8, 24, 16, 3, "#6a5040"); // bowl rim
-  p(ctx, 12, 16, 8, 8, "#201810"); // bowl
-  // Fire
-  p(ctx, 13, 8, 6, 8, "#f08840");
-  p(ctx, 11, 10, 10, 6, "#d04830");
-  p(ctx, 14, 4, 4, 6, "#f0d080");
-  p(ctx, 15, 2, 2, 3, "#fff8e0");
-  // Glow
-  p(ctx, 14, 1, 4, 2, "#fff0c0");
+  p(ctx, 11, 27, 10, 7, PALETTE.stoneDark);
+  p(ctx, 9, 24, 14, 3, PALETTE.stoneLight);
+  p(ctx, 10, 25, 12, 1, "#857b82");
+  p(ctx, 12, 16, 8, 8, "#241a16");
+
+  if (frame === 0) {
+    pixels(ctx, [
+      [13, 10, 6, 7],
+      [12, 13, 8, 4],
+    ], PALETTE.emberDark);
+    pixels(ctx, [
+      [14, 8, 4, 7],
+      [13, 11, 6, 3],
+    ], PALETTE.emberMid);
+    pixels(ctx, [
+      [15, 6, 2, 5],
+      [14, 8, 4, 2],
+    ], PALETTE.emberLight);
+  } else if (frame === 1) {
+    pixels(ctx, [
+      [12, 11, 8, 6],
+      [14, 8, 4, 4],
+    ], PALETTE.emberDark);
+    pixels(ctx, [
+      [13, 9, 6, 6],
+      [14, 13, 4, 3],
+    ], PALETTE.emberMid);
+    pixels(ctx, [
+      [15, 5, 2, 5],
+      [14, 9, 4, 2],
+    ], PALETTE.emberLight);
+  } else {
+    pixels(ctx, [
+      [13, 11, 6, 6],
+      [11, 13, 10, 3],
+    ], PALETTE.emberDark);
+    pixels(ctx, [
+      [14, 8, 4, 7],
+      [13, 11, 6, 3],
+    ], PALETTE.emberMid);
+    pixels(ctx, [
+      [15, 4, 2, 6],
+      [14, 8, 4, 2],
+    ], PALETTE.emberLight);
+  }
+
   return canvas;
 }
 
 function createColumnSprite() {
   const { canvas, ctx } = makeCanvas(32, 44);
-  p(ctx, 6, 2, 20, 6, "#5a4e48"); // capital
-  p(ctx, 10, 8, 12, 26, "#3a3040"); // shaft
-  p(ctx, 6, 34, 20, 6, "#30282e"); // base
-  // Shaft highlight
-  p(ctx, 12, 8, 4, 26, "#4a4050");
-  p(ctx, 18, 8, 2, 26, "#2a2230");
+  p(ctx, 6, 2, 20, 6, PALETTE.stoneLight);
+  p(ctx, 7, 3, 18, 2, "#8d848a");
+  p(ctx, 10, 8, 12, 26, PALETTE.stoneMid);
+  p(ctx, 12, 8, 4, 26, "#7d747a");
+  p(ctx, 19, 8, 2, 26, PALETTE.stoneDark);
+  p(ctx, 6, 34, 20, 6, PALETTE.stoneDark);
+  pixels(ctx, [
+    [10, 16, 2, 3],
+    [20, 24, 2, 3],
+    [14, 28, 4, 1],
+  ], PALETTE.deepShadow);
+  return canvas;
+}
+
+function createLanternSprite(frame = 0) {
+  const { canvas, ctx } = makeCanvas(32, 32);
+  p(ctx, 14, 21, 4, 6, PALETTE.metalDark);
+  p(ctx, 13, 9, 6, 12, PALETTE.metalDark);
+  p(ctx, 14, 10, 4, 10, "#201717");
+  p(ctx, 12, 8, 8, 2, PALETTE.metalMid);
+  p(ctx, 12, 20, 8, 2, PALETTE.metalMid);
+  p(ctx, 15, 5, 2, 3, PALETTE.metalLight);
+
+  if (frame === 0) {
+    pixels(ctx, [[15, 12, 2, 5], [14, 15, 4, 2]], PALETTE.emberMid);
+    pixels(ctx, [[15, 10, 2, 4], [14, 12, 4, 2]], PALETTE.emberLight);
+  } else if (frame === 1) {
+    pixels(ctx, [[14, 12, 4, 4], [15, 10, 2, 5]], PALETTE.emberMid);
+    pixels(ctx, [[15, 9, 2, 4], [14, 12, 4, 2]], PALETTE.emberLight);
+  } else {
+    pixels(ctx, [[15, 13, 2, 4], [14, 15, 4, 2]], PALETTE.emberMid);
+    pixels(ctx, [[15, 11, 2, 4], [14, 13, 4, 2]], PALETTE.emberLight);
+  }
+
+  pixels(ctx, [
+    [13, 10, 1, 9],
+    [18, 10, 1, 9],
+  ], PALETTE.metalLight);
+  return canvas;
+}
+
+function createBarrelSprite(variant = 0) {
+  const { canvas, ctx } = makeCanvas(32, 32);
+  p(ctx, 8, 8, 16, 18, PALETTE.woodMid);
+  p(ctx, 9, 9, 14, 2, PALETTE.woodLight);
+  p(ctx, 9, 22, 14, 2, PALETTE.woodDark);
+  p(ctx, 7, 12, 18, 3, PALETTE.metalDark);
+  p(ctx, 7, 19, 18, 3, PALETTE.metalDark);
+  lineV(ctx, 12, 10, 12, PALETTE.woodDark);
+  lineV(ctx, 16, 10, 12, PALETTE.woodDark);
+  lineV(ctx, 20, 10, 12, PALETTE.woodDark);
+  if (variant === 1) {
+    pixels(ctx, [[9, 16, 2, 2], [21, 14, 2, 2], [16, 24, 2, 1]], PALETTE.deepShadow);
+  } else {
+    pixels(ctx, [[10, 15, 2, 1], [19, 18, 2, 1], [14, 24, 3, 1]], PALETTE.floorWear);
+  }
+  return canvas;
+}
+
+function createCrateSprite(variant = 0) {
+  const { canvas, ctx } = makeCanvas(32, 32);
+  framedRect(ctx, 7, 9, 18, 16, PALETTE.woodMid, PALETTE.outline);
+  p(ctx, 8, 10, 16, 2, PALETTE.woodLight);
+  p(ctx, 8, 21, 16, 3, PALETTE.woodDark);
+  pixels(ctx, [
+    [9, 11, 3, 12],
+    [20, 11, 3, 12],
+    [12, 14, 8, 2],
+    [12, 18, 8, 2],
+  ], PALETTE.woodDark);
+  if (variant === 1) {
+    pixels(ctx, [[13, 12, 6, 1], [10, 20, 4, 1], [18, 17, 3, 1]], PALETTE.floorWear);
+  } else {
+    pixels(ctx, [[11, 13, 2, 2], [19, 19, 2, 2], [15, 16, 2, 1]], PALETTE.deepShadow);
+  }
+  return canvas;
+}
+
+function createBrokenStonesSprite(variant = 0) {
+  const { canvas, ctx } = makeCanvas(32, 32);
+  pixels(ctx, [
+    [7, 20, 8, 5],
+    [16, 18, 6, 6],
+    [21, 22, 4, 3],
+    [11, 24, 10, 3],
+  ], PALETTE.stoneMid);
+  pixels(ctx, [
+    [8, 20, 5, 1],
+    [17, 18, 3, 1],
+    [12, 24, 5, 1],
+  ], PALETTE.stoneLight);
+  pixels(ctx, [
+    [6, 24, 4, 2],
+    [19, 23, 3, 2],
+    [23, 19, 2, 2],
+  ], PALETTE.stoneDark);
+  if (variant === 1) {
+    pixels(ctx, [[10, 17, 3, 2], [13, 19, 2, 2]], PALETTE.deepShadow);
+  }
+  return canvas;
+}
+
+function createWeedsSprite(variant = 0) {
+  const { canvas, ctx } = makeCanvas(32, 32);
+  const dark = variant === 1 ? PALETTE.mossDark : PALETTE.leafDark;
+  const mid = variant === 1 ? PALETTE.mossMid : PALETTE.leafMid;
+  const light = variant === 1 ? PALETTE.mossLight : PALETTE.leafLight;
+  pixels(ctx, [
+    [10, 18, 2, 8],
+    [14, 15, 2, 11],
+    [18, 17, 2, 9],
+    [12, 20, 8, 2],
+  ], dark);
+  pixels(ctx, [
+    [9, 14, 2, 7],
+    [15, 11, 2, 8],
+    [20, 14, 2, 7],
+    [12, 17, 2, 7],
+    [18, 13, 2, 7],
+  ], mid);
+  pixels(ctx, [
+    [15, 10, 1, 3],
+    [10, 14, 1, 3],
+    [20, 14, 1, 3],
+  ], light);
+  return canvas;
+}
+
+function createDebrisSprite() {
+  const { canvas, ctx } = makeCanvas(32, 32);
+  pixels(ctx, [
+    [9, 21, 3, 2],
+    [13, 23, 2, 2],
+    [17, 20, 2, 2],
+    [21, 22, 3, 2],
+    [15, 18, 1, 1],
+    [11, 18, 1, 1],
+    [23, 19, 1, 1],
+  ], PALETTE.dirtMid);
+  pixels(ctx, [
+    [10, 21, 1, 1],
+    [21, 22, 1, 1],
+    [16, 20, 1, 1],
+  ], PALETTE.floorWear);
+  return canvas;
+}
+
+function createWallCrackSprite() {
+  const { canvas, ctx } = makeCanvas(32, 32);
+  pixels(ctx, [
+    [14, 6, 2, 4],
+    [13, 10, 1, 3],
+    [15, 13, 2, 3],
+    [17, 16, 1, 4],
+    [11, 14, 3, 1],
+    [18, 18, 3, 1],
+    [9, 20, 4, 1],
+  ], "#0f0b11");
   return canvas;
 }
 
@@ -483,209 +851,408 @@ function bucketDirection(dir) {
   return [DIRECTIONS.DOWN, DIRECTIONS.LEFT, DIRECTIONS.RIGHT, DIRECTIONS.UP][dir] ?? 0;
 }
 
-/* ── 8-BIT PLAYER (More human-like) ──────────── */
+/* ── 48x48 PLAYER (chunky knight inspired by reference) ── */
 function drawPlayerSprite(ctx, dir, state, frame, flash, comboStep = 0) {
-  const bob = state === "walk" ? [0, 1, 0, -1][frame % 4] : state === "attack" ? [0, -2, 2, 0][frame % 4] : 0;
   const facing = bucketDirection(dir);
-  const F = flash;
+  const bob =
+    state === "walk"
+      ? [0, 1, 0, -1][frame % 4]
+      : state === "attack"
+        ? [0, -1, 1, 0][frame % 4]
+        : [0, 0, 1, 0][frame % 4];
+  const sway = state === "walk" ? [-1, 0, 1, 0][frame % 4] : state === "idle" ? [0, 1, 0, 1][frame % 4] : 0;
+  const hem = state === "walk" ? [0, 1, 0, 2][frame % 4] : state === "idle" ? [0, 0, 1, 0][frame % 4] : 0;
+  const swing = state === "attack" ? [-10, -4, 6, 12][frame % 4] : 0;
 
-  // Palette
   const C = {
-    O: F ? "#886860" : "#0a080c",
-    SK: F ? "#f8e8d0" : "#d8b880",
-    HA: F ? "#e0c898" : "#503828",
-    CL: F ? "#f0d8b0" : "#6a2838",
-    TR: F ? "#f0d898" : "#b89858",
-    LE: F ? "#e0c8a0" : "#58402c",
-    SW: F ? "#e8f0f8" : "#90a8b8",
-    SA: F ? "#b0d8d8" : "#38686a",
-    EY: F ? "#f8f0e0" : "#f0e8d0",
-    SH: F ? "#c8a070" : "#18101a",
-    BE: F ? "#d8b888" : "#8a6a42",
-    PA: F ? "#e0d0b8" : "#685048",
+    outline: flash ? "#8a7466" : "#060508",
+    steel: flash ? "#f3f8fb" : "#d8e0e4",
+    steelMid: flash ? "#cfd9de" : "#98a8ae",
+    steelDark: flash ? "#b4bec4" : "#5a6971",
+    void: flash ? "#7a8790" : "#2a3137",
+    plume: flash ? "#ff9b90" : "#8f1717",
+    cape: flash ? "#d87066" : "#a31b1b",
+    capeDark: flash ? "#b85d56" : "#641010",
+    trim: flash ? "#eef1f2" : "#bfc8cc",
+    boots: flash ? "#b7c0c5" : "#6c7a82",
+    shield: flash ? "#f0f4f7" : "#c7d0d4",
+    shieldDark: flash ? "#cfd8dc" : "#7d8b92",
+    sword: flash ? "#f7fbfd" : "#e4ecef",
+    swordDark: flash ? "#c3ccd1" : "#7f8b92",
+    strap: flash ? "#e0b0a7" : "#bf3b33",
   };
 
-  const bx = 7, by = 7 + bob;
+  const bx = 9;
+  const by = 7 + bob;
 
-  // Shadow under feet
-  p(ctx, 8, by + 18, 16, 6, "#0c080a");
+  p(ctx, 11, by + 31, 26, 7, "rgba(8,6,10,0.72)");
 
-  // ── OUTLINE ──
-  p(ctx, bx, by, 18, 22, C.O);
-
-  // ── LEGS ──
   if (state === "walk") {
-    // Walking: alternating legs
-    const legOff = frame % 2 === 0 ? 0 : 2;
-    p(ctx, bx + 2 + legOff, by + 16, 5, 6, C.LE);
-    p(ctx, bx + 11 - legOff, by + 16, 5, 6, C.LE);
+    const step = frame % 2 === 0 ? 0 : 2;
+    p(ctx, bx + 9 + step, by + 27, 5, 7, C.boots);
+    p(ctx, bx + 19 - step, by + 27, 5, 7, C.boots);
   } else {
-    p(ctx, bx + 3, by + 16, 5, 6, C.LE);
-    p(ctx, bx + 10, by + 16, 5, 6, C.LE);
+    p(ctx, bx + 10, by + 27, 5, 7, C.boots);
+    p(ctx, bx + 18, by + 27, 5, 7, C.boots);
   }
-  // Boots (darker)
-  p(ctx, bx + 2, by + 20, 6, 4, C.SH);
-  p(ctx, bx + 10, by + 20, 6, 4, C.SH);
+  p(ctx, bx + 9, by + 33, 6, 3, C.void);
+  p(ctx, bx + 18, by + 33, 6, 3, C.void);
 
-  // ── TORSO (Cloak body) ──
   if (facing === DIRECTIONS.UP) {
-    // Back view
-    p(ctx, bx + 4, by + 4, 10, 12, C.CL);
-    // Belt
-    p(ctx, bx + 4, by + 13, 10, 3, C.SA);
-    // Hood
-    p(ctx, bx + 3, by + 1, 12, 7, C.CL);
-    p(ctx, bx + 4, by, 10, 4, C.HA);
+    p(ctx, bx + 9, by + 2, 4, 4, C.plume);
+    p(ctx, bx + 13, by + 4, 8, 3, C.plume);
+    p(ctx, bx + 11, by + 7, 14, 11, C.steelDark);
+    p(ctx, bx + 9, by + 17, 18, 11, C.cape);
+    p(ctx, bx + 10, by + 18, 16, 3, C.capeDark);
+    p(ctx, bx + 13, by + 20, 10, 4, C.steelMid);
+    p(ctx, bx + 14, by + 25, 8, 3 + hem, C.capeDark);
+    p(ctx, bx + 8, by + 18, 3, 9, C.steelDark);
+    p(ctx, bx + 25, by + 18, 3, 9, C.steelDark);
   } else {
-    // Front view - skin face visible
-    p(ctx, bx + 2, by + 2, 14, 14, C.CL); // cloak body
-    // Face (skin)
-    p(ctx, bx + 4, by + 2, 10, 7, C.SK);
-    // Hair
-    p(ctx, bx + 3, by, 12, 4, C.HA);
-    // Eyes
-    p(ctx, bx + 5, by + 4, 2, 2, C.EY);
-    p(ctx, bx + 11, by + 4, 2, 2, C.EY);
-    // Mouth
-    p(ctx, bx + 7, by + 7, 4, 1, C.O);
+    p(ctx, bx + 11, by + 1, 4, 5, C.plume);
+    p(ctx, bx + 14, by + 3, 5, 3, C.plume);
+    p(ctx, bx + 10, by + 6, 16, 12, C.steel);
+    p(ctx, bx + 11, by + 7, 14, 2, C.trim);
+    p(ctx, bx + 13, by + 10, 10, 5, C.void);
+    p(ctx, bx + 15, by + 11, 6, 2, C.trim);
+    p(ctx, bx + 7, by + 18, 20, 10, C.steelMid);
+    p(ctx, bx + 9, by + 19, 16, 2, C.trim);
+    p(ctx, bx + 13, by + 21, 8, 4, C.steelDark);
+    p(ctx, bx + 10, by + 24, 14, 2, C.strap);
+    p(ctx, bx + 9, by + 16, 4, 11, C.cape);
+    p(ctx, bx + 22, by + 16, 4, 11, C.cape);
+    p(ctx, bx + 12, by + 26, 10, 3 + hem, C.capeDark);
 
-    // Trim on cloak
-    p(ctx, bx + 4, by + 9, 10, 2, C.TR);
-    // Belt
-    p(ctx, bx + 4, by + 12, 10, 3, C.SA);
-    // Buckle
-    p(ctx, bx + 7, by + 12, 4, 3, C.BE);
+    if (facing === DIRECTIONS.DOWN) {
+      p(ctx, bx + 24, by + 14, 7, 13, C.shield);
+      p(ctx, bx + 25, by + 15, 5, 10, C.shieldDark);
+      p(ctx, bx + 26, by + 18, 3, 4, C.void);
+    } else if (facing === DIRECTIONS.LEFT) {
+      p(ctx, bx + 8, by + 10, 4, 9, C.shieldDark);
+      p(ctx, bx + 10, by + 11, 2, 6, C.void);
+    } else {
+      p(ctx, bx + 24, by + 10, 4, 9, C.shieldDark);
+      p(ctx, bx + 24, by + 11, 2, 6, C.void);
+    }
   }
 
-  // ── ARMS ──
   if (state === "attack") {
-    // Attack: extend arms with weapon
-    const swing = [[-6,2,10,14][frame % 4]];
-    const s = swing[0];
     if (facing === DIRECTIONS.LEFT) {
-      p(ctx, bx - 2 + s, by + 6, 4, 4, C.PA);
-      p(ctx, bx - 4 + s, by + 4, 4, 14, C.SW); // blade
-      p(ctx, bx - 5 + s, by + 2, 6, 3, "#d0a058"); // crossguard
-      p(ctx, bx - 3 + s, by + 16, 4, 4, C.LE); // handle
-      // Slash glow
-      ctx.fillStyle = "rgba(255, 240, 200, 0.3)";
-      ctx.fillRect(bx - 6 + s, by - 2, 10, 6);
+      p(ctx, bx + 1 + swing, by + 15, 4, 5, C.steelDark);
+      p(ctx, bx + 4 + swing, by + 10, 4, 18, C.swordDark);
+      p(ctx, bx + 3 + swing, by + 8, 7, 2, C.sword);
+      p(ctx, bx + 23, by + 16, 3, 9, C.steelDark);
+      p(ctx, bx + 24, by + 11, 4, 9, C.shieldDark);
     } else if (facing === DIRECTIONS.RIGHT) {
-      p(ctx, bx + 14 + s, by + 6, 4, 4, C.PA);
-      p(ctx, bx + 16 + s, by + 4, 4, 14, C.SW);
-      p(ctx, bx + 15 + s, by + 2, 6, 3, "#d0a058");
-      p(ctx, bx + 15 + s, by + 16, 4, 4, C.LE);
-      ctx.fillStyle = "rgba(255, 240, 200, 0.3)";
-      ctx.fillRect(bx + 12 + s, by - 2, 10, 6);
+      p(ctx, bx + 27 + swing, by + 15, 4, 5, C.steelDark);
+      p(ctx, bx + 27 + swing, by + 10, 4, 18, C.swordDark);
+      p(ctx, bx + 25 + swing, by + 8, 7, 2, C.sword);
+      p(ctx, bx + 6, by + 16, 3, 9, C.steelDark);
+      p(ctx, bx + 8, by + 11, 4, 9, C.shieldDark);
+    } else if (facing === DIRECTIONS.UP) {
+      p(ctx, bx + 12, by + 15, 4, 4, C.steelDark);
+      p(ctx, bx + 23, by + 8 + swing, 4, 16, C.swordDark);
+      p(ctx, bx + 22, by + 6 + swing, 7, 2, C.sword);
+      p(ctx, bx + 8, by + 17, 3, 9, C.steelDark);
+      p(ctx, bx + 25, by + 17, 3, 9, C.steelDark);
     } else {
-      // DOWN/UP - show weapon diagonally
-      p(ctx, bx + 4, by + 6, 4, 4, C.PA);
-      p(ctx, bx + 12 + s, by + 2, 4, 12, C.SW);
-      p(ctx, bx + 11 + s, by, 6, 3, "#d0a058");
+      p(ctx, bx + 12, by + 16, 4, 4, C.steelDark);
+      p(ctx, bx + 24 + Math.floor(swing / 2), by + 10, 4, 17, C.swordDark);
+      p(ctx, bx + 23 + Math.floor(swing / 2), by + 8, 7, 2, C.sword);
+      p(ctx, bx + 8, by + 17, 3, 9, C.steelDark);
+      p(ctx, bx + 25, by + 17, 3, 9, C.steelDark);
     }
   } else {
-    // Idle/walk arms
-    p(ctx, bx - 1, by + 6, 3, 8, C.PA);
-    p(ctx, bx + 16, by + 6, 3, 8, C.PA);
-    // Weapon (held at side)
+    p(ctx, bx + 8, by + 16 + Math.max(0, sway), 3, 9, C.steelDark);
+    p(ctx, bx + 23, by + 16 + Math.max(0, -sway), 3, 9, C.steelDark);
+
     if (facing === DIRECTIONS.LEFT) {
-      p(ctx, bx - 2, by + 6, 4, 10, C.SW);
-      p(ctx, bx - 4, by + 4, 6, 3, "#d0a058");
+      p(ctx, bx + 3, by + 13, 4, 14, C.swordDark);
+      p(ctx, bx + 2, by + 11, 7, 2, C.sword);
+      p(ctx, bx + 23, by + 11, 5, 10, C.shieldDark);
     } else if (facing === DIRECTIONS.RIGHT) {
-      p(ctx, bx + 14, by + 6, 4, 10, C.SW);
-      p(ctx, bx + 14, by + 4, 6, 3, "#d0a058");
+      p(ctx, bx + 27, by + 13, 4, 14, C.swordDark);
+      p(ctx, bx + 25, by + 11, 7, 2, C.sword);
+      p(ctx, bx + 8, by + 11, 5, 10, C.shieldDark);
     } else {
-      p(ctx, bx + 13, by + 6, 4, 8, C.SW);
+      p(ctx, bx + 25, by + 15, 4, 12, C.swordDark);
+      p(ctx, bx + 24, by + 13, 6, 2, C.sword);
     }
+  }
+
+  p(ctx, bx + 10, by + 6, 16, 1, C.outline);
+  p(ctx, bx + 10, by + 17, 16, 1, C.outline);
+  p(ctx, bx + 7, by + 18, 1, 10, C.outline);
+  p(ctx, bx + 26, by + 18, 1, 10, C.outline);
+}
+
+function getEnemyStyle(detail, flash) {
+  const styles = [
+    { kind: "skeleton", body: "#d7d1c3", shade: "#8e877d", accent: "#7a4254", face: "#f3e8bf", weapon: "#9ca8b4" },
+    { kind: "hound", body: "#4a4453", shade: "#2b2730", accent: "#887698", face: "#f2dc98", weapon: "#cbc5cf" },
+    { kind: "archer", body: "#4a344d", shade: "#2c1f2d", accent: "#9582af", face: "#f2e6b7", weapon: "#b29671" },
+    { kind: "imp", body: "#733b2c", shade: "#431f17", accent: "#ef9250", face: "#ffe4aa", weapon: "#f5d39a" },
+    { kind: "knight", body: "#625b4f", shade: "#3d3831", accent: "#c3a86a", face: "#f4e4b5", weapon: "#96979e" },
+    { kind: "shaman", body: "#553644", shade: "#2f1f27", accent: "#d59766", face: "#f4dfb3", weapon: "#b27c50" },
+    { kind: "spore", body: "#536541", shade: "#334029", accent: "#97cf72", face: "#dff4b5", weapon: "#b4c98d" },
+    { kind: "howler", body: "#49594b", shade: "#2a352c", accent: "#7db079", face: "#ebf3b8", weapon: "#c0d0b8" },
+    { kind: "witch", body: "#533844", shade: "#2d1f28", accent: "#7db86f", face: "#d7f4b5", weapon: "#75995d" },
+    { kind: "warden", body: "#7a727c", shade: "#4a4450", accent: "#cfb477", face: "#f4ecc9", weapon: "#bec6d2" },
+    { kind: "tyrant", body: "#755137", shade: "#432d20", accent: "#eda05c", face: "#f7e2ae", weapon: "#d8b26c" },
+    { kind: "keeper", body: "#566544", shade: "#2f3827", accent: "#9bc774", face: "#e1f4bb", weapon: "#9b7a4d" },
+    { kind: "lord", body: "#6a6176", shade: "#413b4a", accent: "#bdc0df", face: "#f7f0cc", weapon: "#b0bbd0" },
+    { kind: "furnace", body: "#824632", shade: "#4d281b", accent: "#f3a159", face: "#fff0bd", weapon: "#d19856" },
+    { kind: "colossus", body: "#60714c", shade: "#36422f", accent: "#acd47d", face: "#e7f8c3", weapon: "#a6bb89" },
+    { kind: "bat", body: "#5a4a62", shade: "#2e2532", accent: "#9e7aa9", face: "#f3dc9e", weapon: "#cab8cf" },
+    { kind: "sentinel", body: "#787176", shade: "#48434b", accent: "#cfbd84", face: "#f1e9c8", weapon: "#bcc4ce" },
+    { kind: "oracle", body: "#5a415f", shade: "#312335", accent: "#c38fd5", face: "#f6e7bf", weapon: "#d2b5e7" },
+    { kind: "roller", body: "#6d462e", shade: "#3e281d", accent: "#f0a05d", face: "#f8e4b1", weapon: "#ce9556" },
+    { kind: "bulwark", body: "#666157", shade: "#3a3731", accent: "#d0b16c", face: "#f4e1ad", weapon: "#a4adb4" },
+    { kind: "wisp", body: "#7a5b44", shade: "#4d3529", accent: "#ffbf78", face: "#fff0bf", weapon: "#ffd48d" },
+    { kind: "bloom", body: "#557246", shade: "#32422b", accent: "#89d775", face: "#e9f8bf", weapon: "#b8d79b" },
+    { kind: "briar", body: "#5f6945", shade: "#334027", accent: "#a4cf73", face: "#ebf7c0", weapon: "#9a7d4f" },
+    { kind: "sprinter", body: "#4f6248", shade: "#283229", accent: "#79c28c", face: "#e5f6bb", weapon: "#a6c79e" },
+  ];
+  const style = styles[detail % styles.length];
+  if (!flash) return style;
+  return {
+    ...style,
+    body: "#e8e0d2",
+    shade: "#bdb4a3",
+    accent: "#fbf2de",
+    face: "#fff9ef",
+    weapon: "#f8f1e5",
+  };
+}
+
+function drawEnemyFace(ctx, facing, x, y, w, h, color) {
+  p(ctx, x, y, w, h, color);
+  if (facing === DIRECTIONS.LEFT) {
+    p(ctx, x + 1, y + 2, 3, 2, PALETTE.outline);
+  } else if (facing === DIRECTIONS.RIGHT) {
+    p(ctx, x + w - 4, y + 2, 3, 2, PALETTE.outline);
+  } else {
+    p(ctx, x + 2, y + 2, 3, 2, PALETTE.outline);
+    p(ctx, x + w - 5, y + 2, 3, 2, PALETTE.outline);
   }
 }
 
-/* ── 8-BIT ENEMY ─────────────────────────────── */
 function drawEnemySprite(ctx, dir, state, frame, flash, variant = 0, detail = 0) {
-  const bob = state === "walk" ? [0, 1, 0, -1][frame % 4] : 0;
-  const lunge = state === "attack" ? [-3, 1, 6, 8][frame % 4] : 0;
   const facing = bucketDirection(dir);
+  const bob = state === "walk" ? [0, 1, 0, -1][frame % 4] : 0;
+  const lift = state === "walk" ? [0, 1, 0, 1][frame % 4] : 0;
+  const lunge = state === "attack" ? [-5, -1, 5, 9][frame % 4] : 0;
+  const style = getEnemyStyle(detail, flash);
+  const bx = 8;
+  const by = 7 + bob;
 
-  const palettes = [
-    { b: "#4a4e5c", t: "#7887a0", g: "#f0684a", e: "#ff5040", h: "#a0a8b8" },
-    { b: "#443858", t: "#9078a8", g: "#f0684a", e: "#ff5040", h: "#b8a0c8" },
-    { b: "#384e5e", t: "#88a8c0", g: "#f0c080", e: "#f0d090", h: "#b0c0d0" },
-    { b: "#583428", t: "#c87848", g: "#f0c080", e: "#f0d090", h: "#d09868" },
-    { b: "#48423a", t: "#988858", g: "#f0d8a0", e: "#f0e8b0", h: "#b0a070" },
-    { b: "#402a38", t: "#d09868", g: "#f0d8a0", e: "#f0e8b0", h: "#c89878" },
-    { b: "#38483a", t: "#70a868", g: "#b0e898", e: "#c0f0a0", h: "#88c078" },
-    { b: "#384840", t: "#68a880", g: "#b0e898", e: "#c0f0a0", h: "#80b888" },
-    { b: "#482e42", t: "#78b068", g: "#b0e898", e: "#c0f0a0", h: "#88b078" },
-    { b: "#504e3a", t: "#b8a058", g: "#f0d8a0", e: "#f0e8b0", h: "#c8b070" },
-    { b: "#483828", t: "#e8984a", g: "#f0c080", e: "#f0d090", h: "#d0a060" },
-    { b: "#38483a", t: "#88b868", g: "#b0e898", e: "#c0f0a0", h: "#88b078" },
-    { b: "#50485a", t: "#b0b8d0", g: "#e8e8c0", e: "#f0e8b0", h: "#c8c8d8" },
-    { b: "#543028", t: "#e89848", g: "#f0c080", e: "#f0d090", h: "#d0a060" },
-    { b: "#425038", t: "#b0d880", g: "#d0f0a0", e: "#d8f0b0", h: "#a0c880" },
-  ];
-  const pal = flash
-    ? { ...palettes[detail % palettes.length], b: "#e8e0d0", t: "#f8f0e0", g: "#fff8f0", e: "#fff8f0" }
-    : palettes[detail % palettes.length];
+  if (style.kind === "skeleton" || style.kind === "warden" || style.kind === "lord" || style.kind === "sentinel") {
+    const heavy = style.kind === "warden" || style.kind === "sentinel";
+    const regal = style.kind === "lord";
+    p(ctx, bx + 10, by + 3, 12, 10, style.face);
+    p(ctx, bx + 8, by + 13, 16, 10, regal ? style.accent : style.body);
+    p(ctx, bx + 11, by + 23, 5, 9, style.body);
+    p(ctx, bx + 18, by + 23, 5, 9, style.body);
+    p(ctx, bx + 7, by + 15, 3, 10, style.body);
+    p(ctx, bx + 22, by + 15, 3, 10, style.body);
+    p(ctx, bx + 10, by + 31, 7, 3, PALETTE.deepShadow);
+    p(ctx, bx + 17, by + 31, 7, 3, PALETTE.deepShadow);
+    p(ctx, bx + 9, by + 11, 14, 3, style.shade);
+    drawEnemyFace(ctx, facing, bx + 10, by + 3, 12, 10, style.face);
+    if (heavy) {
+      p(ctx, bx + 6, by + 12, 20, 4, style.shade);
+      p(ctx, bx + 6, by + 9, 5, 4, style.accent);
+      p(ctx, bx + 21, by + 9, 5, 4, style.accent);
+    }
+    if (regal) {
+      p(ctx, bx + 7, by + 1, 18, 3, style.accent);
+      p(ctx, bx + 10, by, 12, 1, style.weapon);
+      p(ctx, bx + 7, by + 20, 18, 5, style.body);
+    }
+    if (facing === DIRECTIONS.LEFT) {
+      p(ctx, bx + 1 + lunge, by + 14, 4, 15, style.weapon);
+      p(ctx, bx + 2 + lunge, by + 11, 6, 3, style.accent);
+    } else if (facing === DIRECTIONS.RIGHT) {
+      p(ctx, bx + 27 + lunge, by + 14, 4, 15, style.weapon);
+      p(ctx, bx + 24 + lunge, by + 11, 6, 3, style.accent);
+    } else {
+      p(ctx, bx + 23, by + 12 + Math.min(0, lunge), 4, 14, style.weapon);
+      p(ctx, bx + 22, by + 10 + Math.min(0, lunge), 6, 3, style.accent);
+    }
+  } else if (style.kind === "hound" || style.kind === "howler" || style.kind === "sprinter") {
+    const feral = style.kind === "howler" || style.kind === "sprinter";
+    if (facing === DIRECTIONS.LEFT || facing === DIRECTIONS.RIGHT) {
+      const forward = facing === DIRECTIONS.LEFT ? -4 + lunge : lunge;
+      const hx = facing === DIRECTIONS.LEFT ? bx + 5 + forward : bx + 19 + forward;
+      p(ctx, bx + 11, by + 18, 16, 8, style.body);
+      p(ctx, bx + 13, by + 16, 12, 3, style.accent);
+      p(ctx, hx, by + 13, 10, 8, style.shade);
+      p(ctx, bx + 12, by + 26, 4, 8 - lift, style.shade);
+      p(ctx, bx + 18, by + 26, 4, 9, style.shade);
+      p(ctx, bx + 24, by + 26, 4, 8 - lift, style.shade);
+      p(ctx, bx + 29, by + 26, 3, 8, style.shade);
+      p(ctx, facing === DIRECTIONS.LEFT ? bx + 26 : bx + 8, by + 16, 4, 3, style.accent);
+      p(ctx, facing === DIRECTIONS.LEFT ? hx - 1 : hx + 8, by + 12, 3, 3, style.weapon);
+      drawEnemyFace(ctx, facing, hx + 1, by + 13, 8, 6, style.face);
+      if (state === "attack") {
+        p(ctx, facing === DIRECTIONS.LEFT ? hx - 2 : hx + 8, by + 18, 4, 3, style.weapon);
+      }
+      if (feral) {
+        p(ctx, bx + 14, by + 13, 3, 3, style.accent);
+        p(ctx, bx + 21, by + 13, 3, 3, style.accent);
+      }
+    } else {
+      p(ctx, bx + 11, by + 10, 16, 16, style.body);
+      p(ctx, bx + 9, by + 6 + (facing === DIRECTIONS.UP ? lunge : 0), 20, 8, style.shade);
+      p(ctx, bx + 13, by + 26, 4, 8, style.shade);
+      p(ctx, bx + 21, by + 26, 4, 8, style.shade);
+      p(ctx, bx + 9, by + 18, 3, 8, style.shade);
+      p(ctx, bx + 28, by + 18, 3, 8, style.shade);
+      p(ctx, bx + 13, by + 14, 12, 3, style.accent);
+      drawEnemyFace(ctx, facing, bx + 12, by + 9, 14, 7, style.face);
+      if (feral) {
+        p(ctx, bx + 12, by + 5, 3, 3, style.accent);
+        p(ctx, bx + 23, by + 5, 3, 3, style.accent);
+      }
+    }
+  } else if (style.kind === "bat") {
+    p(ctx, bx + 13, by + 10, 10, 8, style.body);
+    p(ctx, bx + 7, by + 12, 7, 5, style.shade);
+    p(ctx, bx + 22, by + 12, 7, 5, style.shade);
+    p(ctx, bx + 10, by + 18, 4, 8, style.shade);
+    p(ctx, bx + 22, by + 18, 4, 8, style.shade);
+    p(ctx, bx + 12, by + 7, 4, 4, style.accent);
+    p(ctx, bx + 20, by + 7, 4, 4, style.accent);
+    drawEnemyFace(ctx, facing, bx + 14, by + 10, 8, 6, style.face);
+    if (state === "attack") {
+      p(ctx, facing === DIRECTIONS.LEFT ? bx + 6 : bx + 26, by + 14, 4, 3, style.weapon);
+    }
+  } else if (style.kind === "archer" || style.kind === "shaman" || style.kind === "witch" || style.kind === "oracle") {
+    const caster = style.kind !== "archer";
+    p(ctx, bx + 10, by + 4, 14, 11, style.face);
+    p(ctx, bx + 8, by + 13, 18, 12, style.body);
+    p(ctx, bx + 11, by + 17, 12, 3, style.accent);
+    p(ctx, bx + 12, by + 25, 4, 8, style.shade);
+    p(ctx, bx + 18, by + 25, 4, 8, style.shade);
+    p(ctx, bx + 7, by + 15, 3, 10, style.body);
+    p(ctx, bx + 24, by + 15, 3, 10, style.body);
+    drawEnemyFace(ctx, facing, bx + 10, by + 4, 14, 11, style.face);
+    if (style.kind === "witch" || style.kind === "oracle") {
+      p(ctx, bx + 9, by + 2, 3, 4, style.accent);
+      p(ctx, bx + 22, by + 2, 3, 4, style.accent);
+    }
+    if (style.kind === "shaman") {
+      p(ctx, bx + 8, by + 4, 4, 2, style.weapon);
+      p(ctx, bx + 22, by + 4, 4, 2, style.weapon);
+    }
+    if (facing === DIRECTIONS.LEFT) {
+      p(ctx, bx + (caster ? 3 : 2) + lunge, by + 13, 3, 16, caster ? style.weapon : style.accent);
+      p(ctx, bx + (caster ? 1 : 0) + lunge, by + 16, caster ? 6 : 7, 3, style.weapon);
+    } else if (facing === DIRECTIONS.RIGHT) {
+      p(ctx, bx + 28 + lunge, by + 13, 3, 16, caster ? style.weapon : style.accent);
+      p(ctx, bx + 25 + lunge, by + 16, caster ? 6 : 7, 3, style.weapon);
+    } else {
+      p(ctx, bx + 24, by + 13 + Math.min(0, lunge), 3, 15, caster ? style.weapon : style.accent);
+      p(ctx, bx + 22, by + 13 + Math.min(0, lunge), 6, 3, style.weapon);
+    }
+  } else if (style.kind === "roller") {
+    p(ctx, bx + 10, by + 12, 16, 16, style.body);
+    p(ctx, bx + 12, by + 14, 12, 4, style.accent);
+    p(ctx, bx + 11, by + 10, 4, 4, style.weapon);
+    p(ctx, bx + 21, by + 10, 4, 4, style.weapon);
+    p(ctx, bx + 8, by + 18, 3, 8, style.shade);
+    p(ctx, bx + 25, by + 18, 3, 8, style.shade);
+    drawEnemyFace(ctx, facing, bx + 13, by + 15, 10, 7, style.face);
+  } else if (style.kind === "imp" || style.kind === "wisp") {
+    p(ctx, bx + 12, by + 10, 12, 12, style.body);
+    p(ctx, bx + 9, by + 7, 6, 5, style.accent);
+    p(ctx, bx + 21, by + 7, 6, 5, style.accent);
+    if (style.kind !== "wisp") {
+      p(ctx, bx + 11, by + 22, 5, 8, style.shade);
+      p(ctx, bx + 20, by + 22, 5, 8, style.shade);
+      p(ctx, bx + 7, by + 15, 5, 8, style.body);
+      p(ctx, bx + 24, by + 15, 5, 8, style.body);
+    } else {
+      p(ctx, bx + 9, by + 21, 18, 4, style.accent);
+    }
+    p(ctx, bx + 13, by + 15, 10, 3, style.accent);
+    drawEnemyFace(ctx, facing, bx + 13, by + 11, 10, 7, style.face);
+    if (facing === DIRECTIONS.LEFT) {
+      p(ctx, bx + 2 + lunge, by + 16, 6, 5, style.weapon);
+    } else if (facing === DIRECTIONS.RIGHT) {
+      p(ctx, bx + 27 + lunge, by + 16, 6, 5, style.weapon);
+    } else {
+      p(ctx, bx + 22, by + 10 + Math.min(0, lunge), 5, 8, style.weapon);
+    }
+  } else if (style.kind === "knight" || style.kind === "tyrant" || style.kind === "furnace" || style.kind === "bulwark") {
+    const brute = style.kind === "tyrant" || style.kind === "bulwark";
+    const molten = style.kind === "furnace";
+    p(ctx, bx + 9, by + 4, 16, 11, molten ? style.accent : style.face);
+    p(ctx, bx + 7, by + 14, 20, 13, style.body);
+    p(ctx, bx + 10, by + 18, 14, 4, style.accent);
+    p(ctx, bx + 10, by + 27, 5, 8, style.shade);
+    p(ctx, bx + 19, by + 27, 5, 8, style.shade);
+    p(ctx, bx + 6, by + 16, 3, 10, style.body);
+    p(ctx, bx + 25, by + 16, 3, 10, style.body);
+    drawEnemyFace(ctx, facing, bx + 9, by + 4, 16, 11, molten ? style.accent : style.face);
+    if (molten) {
+      p(ctx, bx + 12, by + 19, 10, 5, style.face);
+      p(ctx, bx + 13, by + 20, 8, 2, style.accent);
+    }
+    if (brute) {
+      p(ctx, bx + 7, by + 2, 6, 3, style.accent);
+      p(ctx, bx + 21, by + 2, 6, 3, style.accent);
+    }
+    if (facing === DIRECTIONS.LEFT) {
+      p(ctx, bx + (brute ? 0 : 1) + lunge, by + 13, 6, 16, style.weapon);
+      p(ctx, bx + 2 + lunge, by + 11, 8, 3, style.accent);
+    } else if (facing === DIRECTIONS.RIGHT) {
+      p(ctx, bx + 26 + lunge, by + 13, 6, 16, style.weapon);
+      p(ctx, bx + 22 + lunge, by + 11, 8, 3, style.accent);
+    } else {
+      p(ctx, bx + 23, by + 13 + Math.min(0, lunge), 5, 15, style.weapon);
+      p(ctx, bx + 21, by + 11 + Math.min(0, lunge), 8, 3, style.accent);
+    }
+  } else if (style.kind === "spore" || style.kind === "bloom") {
+    p(ctx, bx + 8, by + 5, 20, 10, style.accent);
+    p(ctx, bx + 11, by + 9, 14, 3, style.face);
+    p(ctx, bx + 12, by + 16, 12, 10, style.body);
+    p(ctx, bx + 11, by + 26, 5, 8, style.shade);
+    p(ctx, bx + 20, by + 26, 5, 8, style.shade);
+    p(ctx, bx + 8, by + 18, 3, 8, style.body);
+    p(ctx, bx + 25, by + 18, 3, 8, style.body);
+    drawEnemyFace(ctx, facing, bx + 13, by + 16, 10, 7, style.face);
+    p(ctx, bx + 12, by + 11, 3, 3, style.body);
+    p(ctx, bx + 21, by + 11, 3, 3, style.body);
+  } else if (style.kind === "keeper" || style.kind === "colossus" || style.kind === "briar") {
+    const boss = style.kind === "colossus";
+    p(ctx, bx + 8, by + 6, 20, 18, style.body);
+    p(ctx, bx + 10, by + 3, 16, 7, style.shade);
+    p(ctx, bx + 11, by + 17, 14, 4, style.accent);
+    p(ctx, bx + 10, by + 24, 5, 10, style.shade);
+    p(ctx, bx + 21, by + 24, 5, 10, style.shade);
+    p(ctx, bx + 6, by + 16, 4, 10, style.shade);
+    p(ctx, bx + 26, by + 16, 4, 10, style.shade);
+    drawEnemyFace(ctx, facing, bx + 11, by + 7, 14, 9, style.face);
+    p(ctx, bx + 8, by + 3, 4, 4, style.weapon);
+    p(ctx, bx + 24, by + 3, 4, 4, style.weapon);
+    if (boss) {
+      p(ctx, bx + 5, by + 1, 6, 3, style.accent);
+      p(ctx, bx + 25, by + 1, 6, 3, style.accent);
+      p(ctx, bx + 7, by + 22, 22, 5, style.shade);
+    }
+    if (facing === DIRECTIONS.LEFT) {
+      p(ctx, bx + 2 + lunge, by + 17, 6, 12, style.weapon);
+    } else if (facing === DIRECTIONS.RIGHT) {
+      p(ctx, bx + 27 + lunge, by + 17, 6, 12, style.weapon);
+    } else {
+      p(ctx, bx + 24, by + 14 + Math.min(0, lunge), 4, 13, style.weapon);
+    }
+  }
 
-  const bx = 7, by = 7 + bob;
-
-  // Outline
-  p(ctx, bx, by, 18, 22, "#080608");
-
-  // Body
-  p(ctx, bx + 2, by + 2, 14, 14, pal.b);
-  // Armor/trim
-  p(ctx, bx + 4, by + 8, 10, 3, pal.t);
-
-  // Eyes
-  const eyeX = facing === DIRECTIONS.LEFT ? bx + 2 : facing === DIRECTIONS.RIGHT ? bx + 12 : bx + 4;
-  p(ctx, eyeX, by + 3, 4, 3, pal.e);
-  p(ctx, eyeX + 6, by + 3, 4, 3, pal.e);
-  p(ctx, eyeX + 1, by + 4, 2, 1, "#000");
-  p(ctx, eyeX + 7, by + 4, 2, 1, "#000");
-
-  // Mouth (attack)
   if (state === "attack") {
-    p(ctx, bx + 6, by + 9, 6, 2, pal.g);
-  }
-
-  // Horns
-  if (detail === 2 || detail === 5 || detail === 8 || detail >= 10) {
-    p(ctx, bx - 2, by - 1, 5, 4, pal.h);
-    p(ctx, bx + 15, by - 1, 5, 4, pal.h);
-    // Horn tips
-    p(ctx, bx - 1, by - 2, 3, 2, pal.t);
-    p(ctx, bx + 16, by - 2, 3, 2, pal.t);
-  }
-
-  // Legs
-  p(ctx, bx + 2, by + 16, 6, 6, "#1a1418");
-  p(ctx, bx + 10, by + 16, 6, 6, "#1a1418");
-
-  // Arms
-  p(ctx, bx - 1, by + 6, 3, 6, pal.b);
-  p(ctx, bx + 16, by + 6, 3, 6, pal.b);
-
-  // Claws/weapons
-  const l = lunge;
-  if (facing === DIRECTIONS.LEFT) {
-    p(ctx, bx - 4 + l, by + 8, 4, 3, "#d8d0c0");
-    p(ctx, bx - 6 + l, by + 12, 6, 2, "#d8d0c0");
-  } else if (facing === DIRECTIONS.RIGHT) {
-    p(ctx, bx + 18 + l, by + 8, 4, 3, "#d8d0c0");
-    p(ctx, bx + 18 + l, by + 12, 6, 2, "#d8d0c0");
-  }
-
-  // Crown/helmet (boss)
-  if (detail >= 9) {
-    p(ctx, bx + 3, by - 2, 12, 4, pal.h);
-    p(ctx, bx + 5, by - 4, 8, 3, pal.t);
-  }
-
-  // Attack aura
-  if (state === "attack") {
-    ctx.fillStyle = `${pal.g}33`;
-    ctx.fillRect(bx - 2, by - 2, 22, 26);
+    ctx.fillStyle = `${style.accent}33`;
+    ctx.fillRect(bx + 2, by + 4, 26, 30);
   }
 }
 
@@ -709,9 +1276,12 @@ export const ITEM_DEFS = {
 
 export class AssetFactory {
   constructor() {
+    const floorVariants = [0, 1, 2, 3, 4].map((variant) => createFloorTile(variant));
+    this.characterSpriteSize = CHARACTER_SIZE;
     this.tiles = {
-      floor: createFloorTile(0),
-      floorAlt: createFloorTile(1),
+      floor: floorVariants[0],
+      floorAlt: floorVariants[1],
+      floors: floorVariants,
       floorDetail: createFloorDetailTile(),
       wallTop: createWallTile(),
       wallFace: createWallFaceTile(),
@@ -721,9 +1291,18 @@ export class AssetFactory {
       chestClosed: createChestSprite(false),
       chestOpen: createChestSprite(true),
       shadow: ellipseShadow(),
+      shadowSoft: ellipseShadow(38, 14, 0.22),
+      shadowPool: ellipseShadow(56, 20, 0.15),
       lootShadow: ellipseShadow(20, 10, 0.28),
       rune: createRuneDecal(),
-      brazier: createBrazierSprite(),
+      brazier: [0, 1, 2].map((frame) => createBrazierSprite(frame)),
+      lantern: [0, 1, 2].map((frame) => createLanternSprite(frame)),
+      barrel: [0, 1].map((variant) => createBarrelSprite(variant)),
+      crate: [0, 1].map((variant) => createCrateSprite(variant)),
+      brokenStones: [0, 1].map((variant) => createBrokenStonesSprite(variant)),
+      weeds: [0, 1].map((variant) => createWeedsSprite(variant)),
+      debris: createDebrisSprite(),
+      wallCrack: createWallCrackSprite(),
       column: createColumnSprite(),
       forge: createForgeSprite(),
       shop: createShopSprite(),
@@ -738,6 +1317,7 @@ export class AssetFactory {
       slash: createSlashFrames(),
     };
     this.spriteCache = new Map();
+    this.spriteOutlineCache = new Map();
     this.itemIcons = Object.fromEntries(
       [...Object.keys(ITEM_DEFS), "gold_coin"].map((key) => {
         const canvas = createItemIcon(key);
@@ -750,7 +1330,7 @@ export class AssetFactory {
     const key = `${kind}-${dir}-${state}-${frame}-${flash}-${variant}-${detail}`;
     if (this.spriteCache.has(key)) return this.spriteCache.get(key);
 
-    const { canvas, ctx } = makeCanvas(BASE_SIZE, BASE_SIZE);
+    const { canvas, ctx } = makeCanvas(CHARACTER_SIZE, CHARACTER_SIZE);
     if (kind === "player") {
       drawPlayerSprite(ctx, dir, state, frame, flash, detail);
     } else {
@@ -758,5 +1338,14 @@ export class AssetFactory {
     }
     this.spriteCache.set(key, canvas);
     return canvas;
+  }
+
+  getCharacterOutlineSprite(kind, dir, state, frame, flash = false, variant = 0, detail = 0) {
+    const key = `${kind}-${dir}-${state}-${frame}-${flash}-${variant}-${detail}`;
+    if (this.spriteOutlineCache.has(key)) return this.spriteOutlineCache.get(key);
+    const sprite = this.getCharacterSprite(kind, dir, state, frame, flash, variant, detail);
+    const outline = createOutlineCanvas(sprite);
+    this.spriteOutlineCache.set(key, outline);
+    return outline;
   }
 }

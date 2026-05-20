@@ -64,7 +64,7 @@ export class CombatSystem {
     const angle = angleBetween(enemy.x, enemy.y, player.x, player.y);
     enemy.x += Math.cos(angle) * 8;
     enemy.y += Math.sin(angle) * 8;
-    player.takeDamage(enemy.damage, this.game, angle);
+    player.takeDamage(enemy.damage, this.game, angle, enemy.meleeEffect ?? null);
   }
 
   castArcaneBurst(player, game) {

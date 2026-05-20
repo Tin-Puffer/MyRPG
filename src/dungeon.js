@@ -147,6 +147,8 @@ export class Dungeon {
     this.props.push(
       { type: "brazier", x: 15.5 * this.tileSize, y: 12.5 * this.tileSize, phase: 0.2 },
       { type: "brazier", x: 56.5 * this.tileSize, y: 12.5 * this.tileSize, phase: 0.6 },
+      { type: "lantern", x: 26.5 * this.tileSize, y: 12.8 * this.tileSize, phase: 0.3, variant: 0 },
+      { type: "lantern", x: 46.5 * this.tileSize, y: 12.8 * this.tileSize, phase: 0.9, variant: 1 },
       { type: "column", x: 26.5 * this.tileSize, y: 22.5 * this.tileSize, phase: 0 },
       { type: "column", x: 46.5 * this.tileSize, y: 22.5 * this.tileSize, phase: 0 },
       { type: "rune", x: 24.5 * this.tileSize, y: 15.5 * this.tileSize, phase: 0.4 },
@@ -155,7 +157,14 @@ export class Dungeon {
       { type: "shrine", x: 20.5 * this.tileSize, y: 28.4 * this.tileSize, phase: 0 },
       { type: "shrine", x: 31.5 * this.tileSize, y: 28.4 * this.tileSize, phase: 0 },
       { type: "shrine", x: 41.5 * this.tileSize, y: 28.4 * this.tileSize, phase: 0 },
-      { type: "shrine", x: 51.5 * this.tileSize, y: 28.4 * this.tileSize, phase: 0 }
+      { type: "shrine", x: 51.5 * this.tileSize, y: 28.4 * this.tileSize, phase: 0 },
+      { type: "crate", x: 18.2 * this.tileSize, y: 30.5 * this.tileSize, phase: 0, variant: 0 },
+      { type: "barrel", x: 23.2 * this.tileSize, y: 30.5 * this.tileSize, phase: 0, variant: 1 },
+      { type: "brokenStones", x: 34.2 * this.tileSize, y: 30.8 * this.tileSize, phase: 0, variant: 0 },
+      { type: "crate", x: 44.6 * this.tileSize, y: 30.5 * this.tileSize, phase: 0, variant: 1 },
+      { type: "barrel", x: 54.4 * this.tileSize, y: 30.4 * this.tileSize, phase: 0, variant: 0 },
+      { type: "weeds", x: 13.8 * this.tileSize, y: 34.2 * this.tileSize, phase: 0, variant: 1 },
+      { type: "debris", x: 58.2 * this.tileSize, y: 34.1 * this.tileSize, phase: 0, variant: 0 }
     );
   }
 
@@ -246,6 +255,50 @@ export class Dungeon {
         x: (room.x + room.w - 1.7) * this.tileSize,
         y: (room.y + 1.6) * this.tileSize,
         phase: 0,
+      });
+    }
+
+    this.scatterClutter(room, roomIndex, isBossRoom);
+  }
+
+  scatterClutter(room, roomIndex, isBossRoom) {
+    if (room.w < 7 || room.h < 7) return;
+
+    const anchors = [
+      { x: room.x + 1.6, y: room.y + room.h - 1.5 },
+      { x: room.x + room.w - 1.6, y: room.y + room.h - 1.5 },
+      { x: room.x + 1.6, y: room.cy + 0.5 },
+      { x: room.x + room.w - 1.6, y: room.cy + 0.5 },
+      { x: room.cx + 0.5, y: room.y + room.h - 1.6 },
+    ];
+
+    const pool =
+      this.theme?.id === "grotto"
+        ? ["weeds", "brokenStones", "weeds", "debris", "crate"]
+        : this.theme?.id === "forge"
+          ? ["barrel", "debris", "brokenStones", "crate", "barrel"]
+          : ["brokenStones", "debris", "crate", "barrel", "brokenStones"];
+    const clutterCount = isBossRoom ? 1 : Math.min(3, 1 + Math.floor(room.w / 5));
+
+    for (let index = 0; index < clutterCount; index += 1) {
+      const anchor = anchors[(roomIndex + index * 2) % anchors.length];
+      const type = pool[(roomIndex + index) % pool.length];
+      this.props.push({
+        type,
+        x: anchor.x * this.tileSize,
+        y: anchor.y * this.tileSize,
+        phase: roomIndex * 0.37 + index,
+        variant: (roomIndex + index) % 2,
+      });
+    }
+
+    if (room.w >= 9 && room.h >= 8 && !isBossRoom && Math.random() > 0.55) {
+      this.props.push({
+        type: "lantern",
+        x: (room.cx + 0.5) * this.tileSize,
+        y: (room.y + 1.7) * this.tileSize,
+        phase: roomIndex * 0.41,
+        variant: roomIndex % 2,
       });
     }
   }
@@ -347,12 +400,13 @@ export class Dungeon {
         const screenY = y * tileSize - camera.y + viewportHeight / 2;
 
         if (tile !== TILE.WALL) {
-          // Boss room (last room) gets decorative floor tiles
           const bossRoom = this.rooms.length > 0 ? this.rooms[this.rooms.length - 1] : null;
-          const isBossTile = bossRoom && x >= bossRoom.x && x < bossRoom.x + bossRoom.w && y >= bossRoom.y && y < bossRoom.y + bossRoom.h;
-          const floor = isBossTile && assets.tiles.floorDetail
-            ? assets.tiles.floorDetail
-            : tileHash(x, y) > 0.5 ? assets.tiles.floorAlt : assets.tiles.floor;
+          const isBossTile =
+            bossRoom && x >= bossRoom.x && x < bossRoom.x + bossRoom.w && y >= bossRoom.y && y < bossRoom.y + bossRoom.h;
+          const floorVariants = assets.tiles.floors ?? [assets.tiles.floor, assets.tiles.floorAlt].filter(Boolean);
+          const floorIndex = Math.min(floorVariants.length - 1, Math.floor(tileHash(x * 11, y * 7) * floorVariants.length));
+          const useDetail = Boolean(isBossTile && assets.tiles.floorDetail && tileHash(x * 3, y * 5) > 0.72);
+          const floor = useDetail ? assets.tiles.floorDetail : floorVariants[floorIndex] ?? assets.tiles.floor;
           ctx.drawImage(floor, screenX, screenY, tileSize, tileSize);
           if (this.theme?.floorTint) {
             ctx.fillStyle = this.theme.floorTint;
@@ -378,6 +432,9 @@ export class Dungeon {
             if (this.theme?.wallTint) {
               ctx.fillStyle = this.theme.wallTint;
               ctx.fillRect(screenX, screenY, tileSize, tileSize);
+            }
+            if (assets.props.wallCrack && tileHash(x * 7, y * 11) > 0.76) {
+              ctx.drawImage(assets.props.wallCrack, screenX, screenY, tileSize, tileSize);
             }
           }
         }
